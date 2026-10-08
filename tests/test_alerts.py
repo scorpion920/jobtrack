@@ -49,8 +49,9 @@ def test_markup_from_the_site_is_escaped():
     text = vacancy_alerts([_v(company="R&D <b>X</b>", title="LLM & RAG")])[0].text
     assert "R&amp;D" in text and "&lt;b&gt;" in text
     assert "LLM &amp; RAG" in text
-    # Власна розмітка лишається робочою.
-    assert text.startswith("<b>")
+    # Власна розмітка лишається робочою (рядок тепер починається з позначки
+    # відповідності, тому перевіряємо наявність, а не початок).
+    assert "<b>R&amp;D" in text
 
 
 def test_escape_keeps_plain_text_intact():
@@ -125,3 +126,58 @@ def test_repost_does_not_produce_a_second_alert():
     alerts = vacancy_alerts(kept)
     assert len(alerts) == 1
     assert alerts[0].key == "vacancy:2"
+
+
+def test_notification_carries_enough_to_decide():
+    """Повідомлення, після якого однаково треба відкривати сторінку, нічого
+    не економить. Перевіряємо, що в ньому є все для рішення."""
+    from app.alerts import describe
+
+    v = _v(company="Office.kh.ua", title="Python Developer (Django)", replies=3,
+           format="remote", years_required=1, english="b2", location="Україна",
+           matched=("Python", "FastAPI", "PostgreSQL"),
+           gaps=("Django: працював на FastAPI",))
+    text = describe(v)
+
+    assert "🟢" in text                      # сила збігу — з першого погляду
+    assert "віддалено" in text               # чи візьмуть
+    assert "1 р. досвіду" in text
+    assert "англ. B2" in text
+    assert "Україна" in text
+    assert "3 відгуків" in text              # наскільки людно
+    assert "Збіг:" in text and "FastAPI" in text
+    assert "Бракує:" in text and "Django" in text
+    assert v.url in text
+
+
+def test_possible_and_strong_are_visually_distinct():
+    from app.alerts import describe
+
+    assert describe(_v(fit="strong")).startswith("🟢")
+    assert describe(_v(fit="possible")).startswith("🟡")
+
+
+def test_long_match_list_is_shortened_with_a_counter():
+    """П'ять збігів на екрані, решта числом: довгий перелік перестають читати."""
+    from app.alerts import describe
+
+    text = describe(_v(matched=tuple(f"skill{i}" for i in range(9))))
+    assert "+4" in text
+    assert "skill5" not in text
+
+
+def test_english_not_needed_is_said_in_words():
+    """«англ. NONE» читається як помилка, а не як «не потрібна»."""
+    from app.alerts import describe
+
+    assert "англ. не потрібна" in describe(_v(english="none"))
+
+
+def test_missing_fields_do_not_break_the_message():
+    """DOU не повідомляє ані років, ані англійської — рядок просто коротший."""
+    from app.alerts import describe
+
+    text = describe(_v(format=None, years_required=None, english=None,
+                       location=None, replies=None, matched=(), gaps=()))
+    assert "відгуки не видно" in text
+    assert "Збіг:" not in text

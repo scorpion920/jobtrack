@@ -28,8 +28,8 @@ from datetime import date
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from sqlalchemy import select
 
-from app.alerts import (ApplicationBrief, VacancyBrief, silence_alerts,
-                        unsent, vacancy_alerts)
+from app.alerts import (Alert, ApplicationBrief, VacancyBrief,
+                        silence_alerts, unsent, vacancy_alerts)
 from app.collect import collect
 from app.dedup import Publication, find_reposts
 from app.db import get_sessionmaker
@@ -61,6 +61,11 @@ async def collect_all() -> None:
 
         if sum(fresh):
             await announce_new(session)
+        else:
+            # Тиша теж буває змістовною: прогін відбувся і нового не знайшов.
+            # У канал це не шлемо — щогодинне «нічого нового» перестали б
+            # читати, а з ним і решту, — але в лог іде завжди.
+            log.info("прогін завершено: нових вакансій немає")
 
 
 async def announce_new(session) -> None:
@@ -94,11 +99,29 @@ async def announce_new(session) -> None:
             source_key=v.source_key, state=verdict.state, fit=content.fit,
             replies=v.replies,
             posted_on=v.posted_at.date() if v.posted_at else None,
+            format=v.format, years_required=v.years_required,
+            english=v.english, location=v.location,
+            matched=tuple(content.matched), gaps=tuple(content.gaps),
         ))
 
     alerts = unsent(vacancy_alerts(briefs), await already_sent(session))
     if not alerts:
         return
+
+    # Зведення попереду переліку: воно відповідає на питання «скільки з
+    # того, що зібрано, взагалі варте уваги», якого окремі картки не
+    # закривають. Ключ несе дату — зведення за різні дні різні за змістом,
+    # на відміну від картки вакансії, яка назавжди та сама.
+    fit = sum(1 for b in briefs if b.state == "ok"
+              and b.fit in {"strong", "possible"})
+    summary = Alert(
+        key=f"digest:{date.today():%Y-%m-%d}:{len(alerts)}",
+        text=(f"<b>Нових вакансій: {len(alerts)}</b>\n"
+              f"Усього в переліку {len(briefs)}, придатних {fit}, "
+              f"подано на {len(applied)}."),
+    )
+    alerts = unsent([summary], await already_sent(session)) + alerts
+
     try:
         sent, failed = await deliver(session, alerts)
         log.info("сповіщень надіслано %d, не вдалося %d", sent, failed)

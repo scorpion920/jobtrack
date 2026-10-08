@@ -56,7 +56,14 @@ class Alert:
 
 @dataclass(frozen=True)
 class VacancyBrief:
-    """Вакансія у вигляді, якого достатньо для рішення про сповіщення."""
+    """Вакансія у вигляді, якого достатньо для РІШЕННЯ, а не лише для згадки.
+
+    Склад полів продиктований питанням, на яке оператор відповідає, читаючи
+    сповіщення: подаватись зараз чи ні. Для цього треба бачити умови
+    (формат, роки, англійська), конкуренцію і — головне — чим вакансія
+    збігається з профілем. Повідомлення, після якого однаково треба
+    відкривати сторінку, не економить нічого.
+    """
 
     id: int
     url: str
@@ -67,6 +74,16 @@ class VacancyBrief:
     fit: str                     # strong | possible | weak
     replies: int | None = None
     posted_on: date | None = None
+
+    # Умови, за якими подачу або дадуть, або ні.
+    format: str | None = None
+    years_required: int | None = None
+    english: str | None = None
+    location: str | None = None
+
+    # Чим збігається і чого бракує — те, заради чого сповіщення й читають.
+    matched: tuple[str, ...] = ()
+    gaps: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -91,16 +108,62 @@ def vacancy_alerts(vacancies: list[VacancyBrief]) -> list[Alert]:
     for v in vacancies:
         if v.state != "ok" or v.fit not in {"strong", "possible"}:
             continue
-        competition = (f"{v.replies} відгуків" if v.replies is not None
-                       else "відгуки не видно")
-        out.append(Alert(
-            key=f"vacancy:{v.id}",
-            text=(f"<b>{esc(v.company)}</b> — {esc(v.title)}\n"
-                  f"{competition} · {esc(v.source_key)}"
-                  + (f" · {v.posted_on.strftime('%d.%m')}" if v.posted_on else "")
-                  + f"\n{v.url}"),
-        ))
+        out.append(Alert(key=f"vacancy:{v.id}", text=describe(v)))
     return out
+
+
+#  Умовні позначки. Один символ на початку рядка дає змогу відрізнити
+#  сильний збіг від імовірного, не читаючи тексту, — а саме так сповіщення
+#  і проглядають: швидко і в черзі з іншими.
+_MARK = {"strong": "🟢", "possible": "🟡"}
+
+_ENGLISH_NOT_NEEDED = "не потрібна"
+
+
+def describe(v: VacancyBrief) -> str:
+    """Текст, після якого не треба відкривати сторінку, щоб вирішити.
+
+    Порядок рядків — за тим, у якому їх читають: спершу що це, далі чи
+    візьмуть, потім наскільки людно, і аж тоді чим цікаво.
+    """
+    head = f"{_MARK.get(v.fit, '•')} <b>{esc(v.company)}</b> — {esc(v.title)}"
+
+    terms: list[str] = []
+    if v.format:
+        terms.append({"remote": "віддалено", "office": "офіс",
+                      "hybrid": "гібрид"}.get(v.format, v.format))
+    if v.years_required is not None:
+        terms.append(f"{v.years_required} р. досвіду")
+    if v.english:
+        terms.append("англ. " + (_ENGLISH_NOT_NEEDED if v.english == "none"
+                                 else v.english.upper()))
+    if v.location:
+        terms.append(esc(v.location))
+
+    # «Відгуки не видно» і «нуль відгуків» — різні речі, і плутати їх не
+    # можна: DOU конкуренції не повідомляє взагалі.
+    competition = (f"{v.replies} відгуків" if v.replies is not None
+                   else "відгуки не видно")
+    source = f"{competition} · {esc(v.source_key)}"
+    if v.posted_on:
+        source += f" · {v.posted_on.strftime('%d.%m')}"
+
+    lines = [head]
+    if terms:
+        lines.append(" · ".join(terms))
+    lines.append(source)
+
+    if v.matched:
+        shown = ", ".join(esc(m) for m in v.matched[:5])
+        more = len(v.matched) - 5
+        lines.append(f"\n<b>Збіг:</b> {shown}" + (f" +{more}" if more > 0 else ""))
+    if v.gaps:
+        # Прогалина подається з заміною, а не голим фактом: саме так її
+        # доведеться називати в супровідному листі.
+        lines.append(f"<b>Бракує:</b> {esc(v.gaps[0])}")
+
+    lines.append(f"\n{v.url}")
+    return "\n".join(lines)
 
 
 def silence_alerts(applications: list[ApplicationBrief],
