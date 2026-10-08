@@ -27,6 +27,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import (Application, ApplicationEvent, BotState, Channel,
                         Notification, Status, Vacancy)
+from app.alerts import esc
 from app.config import get_settings
 from app.notify import NotConfigured, _safe, call
 
@@ -49,15 +50,19 @@ async def _apply(session: AsyncSession, action: str, vacancy_id: int) -> str:
     if not vacancy:
         return "вакансії вже немає в базі"
 
+    # Назва компанії й посада приходять із майданчика, а підтвердження
+    # вставляється в <b>…</b> із parse_mode=HTML. Без екранування вакансія
+    # «Senior AI/ML Engineer (Python, LLM & RAG)» — вона є в базі — дала б
+    # 400 Bad Request, і позначка не з'явилась би саме там, де дію виконано.
     if action == "skip":
         vacancy.dismissed = True
-        return f"🚫 приховано: {vacancy.company}"
+        return f"🚫 приховано: {esc(vacancy.company)}"
 
     existing = (await session.execute(
         select(Application).where(Application.vacancy_id == vacancy_id)
     )).scalar_one_or_none()
     if existing:
-        return f"вже записано раніше: {vacancy.company}"
+        return f"вже записано раніше: {esc(vacancy.company)}"
 
     app = Application(
         company=vacancy.company, position=vacancy.title, url=vacancy.url,
@@ -69,7 +74,7 @@ async def _apply(session: AsyncSession, action: str, vacancy_id: int) -> str:
     await session.flush()
     session.add(ApplicationEvent(application_id=app.id, status=Status.sent,
                                  occurred_on=date.today(), origin="telegram"))
-    return f"✅ записано: {vacancy.company} — {vacancy.title[:40]}"
+    return f"✅ записано: {esc(vacancy.company)} — {esc(vacancy.title[:40])}"
 
 
 def _is_owner(query: dict) -> bool:

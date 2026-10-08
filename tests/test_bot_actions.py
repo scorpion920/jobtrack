@@ -136,3 +136,26 @@ def test_unconfigured_chat_allows_nobody(monkeypatch):
                         lambda: Settings(telegram_chat_id=""))
     assert not bot_actions._is_owner({"from": {"id": 555},
                                       "message": {"chat": {"id": 555}}})
+
+
+def test_confirmation_text_escapes_company_and_title():
+    """Підтвердження вставляється в <b>…</b> з parse_mode=HTML.
+
+    Назва компанії й посада приходять із майданчика. Без екранування
+    вакансія «Senior AI/ML Engineer (Python, LLM & RAG)» — вона є в базі —
+    дала б 400 Bad Request, і позначка не з'явилась би саме там, де дію
+    щойно виконано.
+
+    Це вже четверте місце, де та сама вада проступила через новий шлях:
+    текст сповіщення, формат ознак, адреса, тепер підтвердження. Спільне в
+    них одне — значення прийшло ззовні.
+    """
+    import inspect
+
+    from app import bot_actions
+
+    source = inspect.getsource(bot_actions._apply)
+    # Жодної підстановки назви без esc().
+    assert "{vacancy.company}" not in source
+    assert "{vacancy.title" not in source
+    assert source.count("esc(") >= 4
