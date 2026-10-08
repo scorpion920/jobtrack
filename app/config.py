@@ -36,6 +36,11 @@ class Settings(BaseSettings):
         "https://djinni.co,https://jobs.dou.ua,https://dou.ua,https://www.linkedin.com"
     )
 
+    # Планувальник. Вимикається для тестів і коли процесів кілька:
+    # двоє планувальників ходили б до майданчика вдвічі частіше,
+    # ніж домовлено.
+    scheduler_enabled: bool = True
+
     telegram_bot_token: str = ""
     telegram_chat_id: str = ""
 

@@ -6,6 +6,8 @@ SPA тут немає навмисно. Поверхня — три сторін
 
 from __future__ import annotations
 
+import logging
+from contextlib import asynccontextmanager
 from pathlib import Path
 from types import SimpleNamespace
 from urllib.parse import quote
@@ -25,6 +27,7 @@ from app.api.applications import router as applications_router
 from app.api.sync import router as sync_router
 from app.api.vacancies import router as vacancies_router
 from app.collect import collect
+from app.scheduler import build as build_scheduler
 from app.dedup import Publication, find_reposts
 from app.linking import vacancy_key
 from app.screen import Candidate, assess, find_alternative
@@ -38,8 +41,42 @@ from app.models import (Application, ApplicationEvent, Channel, SourceConfig,
 BASE_DIR = Path(__file__).resolve().parent
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    """Планувальник живе стільки ж, скільки застосунок.
+
+    `SCHEDULER_ENABLED=false` вимикає його — потрібне для тестів і для
+    випадку, коли процесів кілька: двоє планувальників збирали б те саме
+    вдвічі частіше, ніж домовлено з майданчиком.
+    """
+    # Без цього `log.info` не видно взагалі: кореневий логер стоїть на
+    # WARNING, і планувальник працював би мовчки. «Працює» і «не стартував»
+    # виглядали б однаково — та сама пара станів, через яку збирач статусів
+    # мовчав три години непоміченим.
+    logging.getLogger("jobtrack").setLevel(logging.INFO)
+    if not logging.getLogger("jobtrack").handlers:
+        handler = logging.StreamHandler()
+        handler.setFormatter(logging.Formatter("%(levelname)s [%(name)s] %(message)s"))
+        logging.getLogger("jobtrack").addHandler(handler)
+
+    scheduler = None
+    if get_settings().scheduler_enabled:
+        scheduler = build_scheduler()
+        scheduler.start()
+        app.state.scheduler = scheduler
+        logging.getLogger("jobtrack").info(
+            "планувальник запущено: %s",
+            ", ".join(f"{j.id} → {j.trigger}" for j in scheduler.get_jobs()))
+    try:
+        yield
+    finally:
+        if scheduler:
+            scheduler.shutdown(wait=False)
+
+
 app = FastAPI(title="jobtrack", version="0.1.0",
-              description="Журнал подач і моніторинг вакансій")
+              description="Журнал подач і моніторинг вакансій",
+              lifespan=lifespan)
 # Скрипт збору статусів виконується НА сторінці майданчика (djinni.co), а
 # звертається сюди. Для браузера це міждоменний запит із власним заголовком
 # `X-Sync-Token`, тож він спершу шле передпольотний OPTIONS — і без дозволу
@@ -189,6 +226,7 @@ async def sync_page(request: Request,
 
 @app.get("/vacancies", response_class=HTMLResponse)
 async def vacancies(request: Request, message: str | None = None,
+                    sort: str = "date",
                     session: AsyncSession = Depends(get_session)):
     """Перелік зібраних вакансій.
 
@@ -251,13 +289,34 @@ async def vacancies(request: Request, message: str | None = None,
     # нічого не варта, якщо на вакансію вже 300 відгуків.
     _FIT = {"strong": 0, "possible": 1, "weak": 2}
     _STATE = {"ok": 0, "unchecked": 1, "blocked": 2}
-    view.sort(key=lambda v: (v.applied_on is not None, _STATE[v.state], _FIT[v.fit],
-                             v.replies if v.replies is not None else 10 ** 6))
+
+    if sort == "fit":
+        # За придатністю: доступні зі змістовним збігом угорі, далі за
+        # зростанням конкуренції.
+        view.sort(key=lambda v: (v.applied_on is not None, _STATE[v.state],
+                                 _FIT[v.fit],
+                                 v.replies if v.replies is not None else 10 ** 6))
+    else:
+        # За датою — типово. Вакансія без дати йде вниз: невідомо, коли вона
+        # вийшла, і ставити її поряд зі свіжими означало б вигадувати факт.
+        view.sort(key=lambda v: (v.posted_at is None,
+                                 -(v.posted_at.timestamp() if v.posted_at else 0),
+                                 _STATE[v.state]))
 
     last = max((s.last_run_at for s in sources if s.last_run_at), default=None)
+    # Коли буде наступний автоматичний збір. Без цього рядка сторінка не
+    # відрізняє «планувальник працює і чекає» від «планувальник не стартував».
+    job = getattr(request.app.state, "scheduler", None)
+    next_run = None
+    if job:
+        collect_job = job.get_job("collect")
+        if collect_job and collect_job.next_run_time:
+            next_run = collect_job.next_run_time.strftime("%H:%M")
+
     return templates.TemplateResponse(request, "vacancies.html", {
-        "rows": view, "sources": sources, "message": message,
+        "rows": view, "sources": sources, "message": message, "sort": sort,
         "last_run": last.strftime("%d.%m %H:%M") if last else None,
+        "next_run": next_run,
     })
 
 

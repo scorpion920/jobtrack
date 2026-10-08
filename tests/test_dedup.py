@@ -53,3 +53,25 @@ def test_three_publications_all_point_to_the_newest():
 
 def test_single_publication_is_not_marked():
     assert find_reposts([_p("u1", posted=datetime(2026, 10, 8))]) == {}
+
+
+def test_sorting_by_date_puts_undated_last():
+    """Вакансія без дати йде вниз.
+
+    Невідомо, коли вона вийшла, і ставити її поряд зі свіжими означало б
+    вигадувати факт. Те саме правило, що й у перевипусках: без дати
+    публікація ніколи не виграє.
+    """
+    from datetime import datetime
+
+    class V:
+        def __init__(self, posted, state="ok"):
+            self.posted_at, self.state = posted, state
+
+    _STATE = {"ok": 0, "unchecked": 1, "blocked": 2}
+    rows = [V(None), V(datetime(2026, 10, 8)), V(datetime(2026, 9, 1))]
+    rows.sort(key=lambda v: (v.posted_at is None,
+                             -(v.posted_at.timestamp() if v.posted_at else 0),
+                             _STATE[v.state]))
+    assert [r.posted_at for r in rows] == [
+        datetime(2026, 10, 8), datetime(2026, 9, 1), None]

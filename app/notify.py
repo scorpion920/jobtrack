@@ -12,6 +12,8 @@
 
 from __future__ import annotations
 
+import re
+
 import httpx
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -21,6 +23,23 @@ from app.config import get_settings
 from app.models import Notification
 
 API = "https://api.telegram.org/bot{token}/sendMessage"
+
+
+def _safe(exc: Exception) -> str:
+    """Текст помилки без токена.
+
+    `httpx` кладе повну адресу запиту в текст винятку, а в ній стоїть токен
+    бота: «Client error '400' for url 'https://api.telegram.org/bot<ТОКЕН>/…».
+    Без маскування токен осів би у таблиці `notification` і на сторінці —
+    тобто секрет витік би саме через механізм, що існує для діагностики.
+    """
+    text = f"{type(exc).__name__}: {exc}"
+    token = get_settings().telegram_bot_token
+    if token:
+        text = text.replace(token, "<ТОКЕН ПРИХОВАНО>")
+    # Другий рубіж на випадок, коли токен у тексті відрізняється від
+    # поточного (перевипущений, інша інсталяція): ріжемо будь-що схоже.
+    return re.sub(r"bot\d{6,}:[\w-]{20,}", "bot<ТОКЕН ПРИХОВАНО>", text)
 
 
 class NotConfigured(RuntimeError):
@@ -69,6 +88,6 @@ async def deliver(session: AsyncSession, alerts: list[Alert]) -> tuple[int, int]
             await send(alert.text)
             row.delivered, sent = True, sent + 1
         except Exception as exc:                      # noqa: BLE001
-            row.error, failed = f"{type(exc).__name__}: {exc}", failed + 1
+            row.error, failed = _safe(exc), failed + 1
     await session.commit()
     return sent, failed

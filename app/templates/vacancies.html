@@ -8,13 +8,22 @@
 канал не повідомив достатньо, щоб судити: таку вакансію треба відкрити самому.
 Це не те саме, що «підходить».</p>
 
+<p class="sub" style="margin-bottom:10px">Порядок:
+  {% if sort == 'fit' %}<a href="/vacancies?sort=date">за датою</a> ·
+    <strong>за придатністю</strong>
+  {% else %}<strong>за датою</strong> ·
+    <a href="/vacancies?sort=fit">за придатністю</a>{% endif %}
+</p>
+
 <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:18px">
   {% for s in sources %}
   <form method="post" action="/vacancies/collect/{{ s.key }}" style="display:inline">
     <button type="submit">Зібрати {{ s.label or s.key }}</button>
   </form>
   {% endfor %}
-  {% if last_run %}<span class="sub">останній збір: {{ last_run }}</span>{% endif %}
+  {% if last_run %}<span class="sub">останній збір: {{ last_run }}{% if next_run %} ·
+    наступний автоматично о {{ next_run }}{% else %} · <strong style="color:#b45309">автозбір
+    вимкнено</strong>{% endif %}</span>{% endif %}
 </div>
 
 {% if message %}<p class="sub" style="color:var(--accent)"><strong>{{ message }}</strong></p>{% endif %}
@@ -68,8 +77,6 @@
   {% endfor %}
 </table>
 <p class="sub" style="margin-top:14px">
-Порядок показу — не за датою, а за тим, у якому їх варто читати: доступні зі
-змістовним збігом угорі, далі за зростанням конкуренції.<br>
 Усього <strong>{{ rows|length }}</strong>:
 перевірено й підходить — <strong>{{ rows|selectattr('state','equalto','ok')|list|length }}</strong>,
 потребує перегляду вручну — {{ rows|selectattr('state','equalto','unchecked')|list|length }},

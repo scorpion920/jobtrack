@@ -22,8 +22,24 @@
 
 from __future__ import annotations
 
+import html
 from dataclasses import dataclass
 from datetime import date
+
+
+def esc(value: str) -> str:
+    """Екранувати те, що прийшло з чужого майданчика.
+
+    Повідомлення надсилаються з `parse_mode=HTML`, і назва компанії потрапляє
+    в розмітку. Telegram вимагає екранування `<`, `>` і `&`; без нього
+    вакансія «Senior AI/ML Engineer (Python, LLM &amp; RAG)» дала б 400 Bad
+    Request — тобто сповіщення просто не дійшло б, і причина виглядала б як
+    збій мережі.
+
+    Перевірено на зібраних даних 08.10.2026: такі назви там уже є (Xenoss,
+    DOIT Software), тож це не теоретичний випадок.
+    """
+    return html.escape(value or "", quote=False)
 
 
 @dataclass(frozen=True)
@@ -79,8 +95,8 @@ def vacancy_alerts(vacancies: list[VacancyBrief]) -> list[Alert]:
                        else "відгуки не видно")
         out.append(Alert(
             key=f"vacancy:{v.id}",
-            text=(f"<b>{v.company}</b> — {v.title}\n"
-                  f"{competition} · {v.source_key}"
+            text=(f"<b>{esc(v.company)}</b> — {esc(v.title)}\n"
+                  f"{competition} · {esc(v.source_key)}"
                   + (f" · {v.posted_on.strftime('%d.%m')}" if v.posted_on else "")
                   + f"\n{v.url}"),
         ))
@@ -103,8 +119,8 @@ def silence_alerts(applications: list[ApplicationBrief],
             continue
         out.append(Alert(
             key=f"silence:{app.id}:{app.days_silent // days}",
-            text=(f"Тиша {app.days_silent} днів: <b>{app.company}</b> — "
-                  f"{app.position} ({app.channel})"),
+            text=(f"Тиша {app.days_silent} днів: <b>{esc(app.company)}</b> — "
+                  f"{esc(app.position)} ({esc(app.channel)})"),
         ))
     return out
 
