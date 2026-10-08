@@ -41,6 +41,15 @@ class Settings(BaseSettings):
     # ніж домовлено.
     scheduler_enabled: bool = True
 
+    # Доступ до MTProto — для ЧИТАННЯ каналів. Це не те саме, що токен бота:
+    # бот не бачить публічних каналів, у яких не перебуває, і не може читати
+    # їх історію. Облікові дані видає my.telegram.org.
+    telegram_api_id: int = 0
+    telegram_api_hash: str = ""
+    # Файл сесії telethon. Лежить у data/, який не потрапляє в git: сесія
+    # рівноцінна входу в акаунт.
+    telegram_session: str = "data/jobtrack.session"
+
     telegram_bot_token: str = ""
     telegram_chat_id: str = ""
 
