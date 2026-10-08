@@ -12,12 +12,28 @@
 <textarea readonly rows="3" style="font-family:ui-monospace,monospace;font-size:12px"
           onclick="this.select()">{{ snippet }}</textarea>
 
+<h2 style="font-size:15px;margin-top:26px">DOU — окремий фрагмент</h2>
+<p class="sub">Відкрийте свій профіль на DOU → вкладка <em>Відгуки на вакансії</em>.
+DOU не показує, чи переглянули відгук, тому звідси беруться подачі, дати й
+<strong>ім'я файлу резюме</strong> — те поле, за яким воронка порівнює версії
+між собою. Djinni його не дає взагалі.</p>
+<textarea readonly rows="3" style="font-family:ui-monospace,monospace;font-size:12px"
+          onclick="this.select()">{{ snippet_dou }}</textarea>
+
 <h2 style="font-size:15px;margin-top:26px">Спосіб 2 — закладка</h2>
 <p class="sub">Перетягніть посилання на панель закладок. Якщо сайт забороняє
 виконання вбудованих скриптів, скористайтесь способом&nbsp;1.</p>
 <p><a href="{{ bookmarklet }}" style="display:inline-block;padding:7px 14px;
    border:1px solid var(--accent);border-radius:6px;color:var(--accent);
    text-decoration:none;font-weight:600">jobtrack: зібрати статуси</a></p>
+
+<h2 style="font-size:15px;margin-top:26px">Спосіб 0 — діагностика розмітки</h2>
+<p class="sub">Селектори написані наосліп: сторінка за логіном, автор коду її не
+бачить. Якщо збір знайшов не те або нічого — спершу запустіть це. Воно
+<strong>нічого не шле й нічого не пише</strong>, лише описує структуру сторінки
+й копіює опис у буфер обміну.</p>
+<textarea readonly rows="3" style="font-family:ui-monospace,monospace;font-size:12px"
+          onclick="this.select()">{{ diagnose }}</textarea>
 
 <h2 style="font-size:15px;margin-top:26px">Що станеться</h2>
 <ul class="sub" style="line-height:1.7">

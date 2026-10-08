@@ -36,6 +36,7 @@ class SyncItemIn(BaseModel):
     status: Status | None = None
     status_on: date | None = None
     note: str | None = None
+    cv_version: str | None = None
 
 
 class SyncIn(BaseModel):
@@ -88,7 +89,8 @@ async def sync(payload: SyncIn,
     items = [SyncItem(company=i.company, position=i.position, url=i.url,
                       applied_on=i.applied_on,
                       status=i.status.value if i.status else None,
-                      status_on=i.status_on, note=i.note)
+                      status_on=i.status_on, note=i.note,
+                      cv_version=i.cv_version)
              for i in payload.items]
 
     today = date.today()
@@ -115,7 +117,8 @@ async def sync(payload: SyncIn,
     for planned in plan.create:
         obj = Application(company=planned.company, position=planned.position,
                           url=planned.url, channel=payload.source,
-                          applied_on=planned.applied_on)
+                          applied_on=planned.applied_on,
+                          cv_version=planned.cv_version)
         session.add(obj)
         await session.flush()
         created_ids[planned.item_index] = obj.id

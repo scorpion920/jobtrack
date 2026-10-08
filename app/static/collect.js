@@ -1,80 +1,130 @@
-/* Читач сторінки «Мої відгуки» у ВЛАСНІЙ сесії користувача.
+/* Читач сторінки відгуків Djinni (/my/inbox/) у ВЛАСНІЙ сесії користувача.
  *
- * Межа, через яку цей файл узагалі існує: сторінка за логіном, і автоматизувати
- * вхід означало б тримати чужі облікові дані. Тут натомість людина сама відкриває
- * сторінку, а скрипт лише читає те, що вже на екрані.
+ * Межа, через яку цей файл існує: сторінка за логіном, і автоматизувати вхід
+ * означало б тримати чужі облікові дані й ризикувати акаунтом, який є єдиним
+ * каналом пошуку. Тут сторінку відкриває людина, скрипт лише читає екран.
  *
- * Селектори НЕ перевірені — сторінка за логіном, автор коду її не бачив. Тому
- * спершу показується попередній перегляд, і лише після підтвердження дані йдуть
- * у журнал. Незнайомі написання статусів виводяться окремо: перший прогін — це
- * розвідка розмітки, а не імпорт.
+ * Селектори встановлені за фактом 08.10.2026 розбором справжньої розмітки:
+ *   рядок      .proposal.js-proposal   (data-id = ідентифікатор листування)
+ *   компанія   a[href*="/jobs/company-"]
+ *   позиція    .job_title a   (запасний варіант — a[href^="/my/inbox/"])
+ *   рекрутер   .text-gray-600
+ * Два попередні здогади про розмітку були хибні; тому тут нічого не
+ * вгадується, а невідоме виводиться користувачеві, а не замовчується.
  */
 (function () {
   "use strict";
 
   var API = "__API__", TOKEN = "__TOKEN__", SOURCE = "__SOURCE__";
 
-  // Слова → наші стани. Регістр і закінчення не враховуються: шукаємо корінь.
-  var STATUS_WORDS = [
-    [/відхил|відмов|reject|declin|не підійш/i, "rejected"],
-    [/запрош|invit|співбес|interview|intervi/i, "invited"],
-    [/тестов|test task|завдання/i, "test_task"],
-    [/офер|offer|пропозиц/i, "offer"],
-    [/перегл|переглян|viewed|seen|прочит/i, "viewed"],
-    [/не перегл|unread|не прочит/i, null]   // явна відсутність перегляду
+  var WRONG = [
+    [/\/my\/dashboard/, "це рекомендації за профілем, а не ваші відгуки"],
+    [/\/my\/profile/, "це ваш профіль"],
+    [/\/my\/stats/, "це статистика, окрема сторінка"],
+    [/^\/jobs\/?$/, "це загальний список вакансій"]
   ];
-
-  function statusFrom(text) {
-    if (!text) return undefined;
-    // «не переглянуто» мусить перевірятись ПЕРЕД «переглянуто», інакше
-    // підрядок збігається і дає протилежний результат.
-    if (/не\s+перегл|unread|не\s+прочит/i.test(text)) return null;
-    for (var i = 0; i < STATUS_WORDS.length; i++) {
-      if (STATUS_WORDS[i][0].test(text)) return STATUS_WORDS[i][1];
+  for (var w = 0; w < WRONG.length; w++) {
+    if (WRONG[w][0].test(location.pathname)) {
+      alert("jobtrack: не та сторінка.\n\n" + location.pathname + " — " + WRONG[w][1] +
+            ".\n\nВідгуки лежать за адресою /my/inbox/ — відкрийте її й запустіть знову.");
+      return;
     }
-    return undefined;   // невідоме написання — повідомити, не вгадувати
   }
 
   function text(el) { return el ? (el.textContent || "").replace(/\s+/g, " ").trim() : ""; }
 
-  function collect() {
-    var rows = [], unknown = [], seen = {};
-
-    // Беремо кожне посилання на вакансію і піднімаємось до контейнера рядка.
-    var links = document.querySelectorAll('a[href*="/jobs/"], a[href*="/vacancies/"]');
-    for (var i = 0; i < links.length; i++) {
-      var a = links[i];
-      var href = a.href;
-      if (!href || seen[href]) continue;
-
-      var box = a.closest("li, tr, article, .card, .list-item") || a.parentElement;
-      if (!box) continue;
-      var blob = text(box);
-      if (!blob) continue;
-
-      seen[href] = true;
-
-      var st = statusFrom(blob);
-      if (st === undefined && blob.length < 400) unknown.push(blob.slice(0, 120));
-
-      rows.push({
-        url: href,
-        position: text(a) || "—",
-        company: companyNear(box, a) || "—",
-        status: st === undefined ? null : st,
-        note: null
-      });
-    }
-    return { rows: rows, unknown: unknown };
+  /* Слова → стани. Рядки взято з реального інтерфейсу Djinni, не вигадано.
+     Порядок має значення: «не переглянуто» мусить перевірятись перед
+     «переглянуто», а пряма відмова — перед загальною ознакою відповіді. */
+  function statusFrom(blob) {
+    if (/ваш відгук на цю позицію відхилено|відхилено|відмовл/i.test(blob))
+      return { s: "rejected", why: "відмова" };
+    if (/призупиня|призупинил|пауз|вакансію закрит|позицію закрит/i.test(blob))
+      return { s: "rejected", why: "вакансію закрито" };
+    if (/запрош|співбес|interview|созвон|дзвінок|calendly/i.test(blob))
+      return { s: "invited", why: "запрошення" };
+    if (/тестов|test task|тестове завдання/i.test(blob))
+      return { s: "test_task", why: "тестове" };
+    if (/офер|offer|пропозиці[юї] роботи/i.test(blob))
+      return { s: "offer", why: "офер" };
+    // «Ви відгукнулись» і більше нічого — відповіді не було взагалі.
+    if (/ви відгукнулись/i.test(blob) && !/\bВи:/.test(blob))
+      return { s: null, why: "лише подача, відповіді не було" };
+    // Будь-який текст від рекрутера означає, що відгук прочитали.
+    if (/дякую|вітаю|на жаль|доброго дня|добрий день|hello|hi\b/i.test(blob))
+      return { s: "viewed", why: "рекрутер відповів" };
+    return { s: null, why: null };
   }
 
-  function companyNear(box, link) {
-    // Назва компанії зазвичай поруч: окреме посилання на профіль компанії
-    // або сусідній рядок. Беремо перше, що не є самим посиланням на вакансію.
-    var cand = box.querySelector('a[href*="/company"], a[href*="/companies/"], .company, .text-muted');
-    if (cand && cand !== link) { var t = text(cand); if (t) return t; }
-    var parts = text(box).split("·");
-    return parts.length > 1 ? parts[1].trim() : "";
+  /* Дата: спершу <time datetime>, далі «8 жовтня» / «08.10.2026» у тексті.
+     Якщо дати немає — НЕ підставляємо сьогодні: подача з вересня, записана
+     сьогоднішнім числом, зіпсувала б розріз воронки за тижнями. */
+  var MONTHS = ["січ", "лют", "берез", "квіт", "трав", "черв",
+                "лип", "серп", "верес", "жовт", "листоп", "груд"];
+  function dateFrom(box) {
+    // Djinni показує відносний вік: «5mo», «8mo», «3d». Точного числа немає,
+    // тож дата ПРИБЛИЗНА — і це позначається в нотатці, а не замовчується.
+    var rel = text(box).match(/\b(\d+)\s*(mo|d|h|w|y)\b/);
+    if (rel) {
+      var n = parseInt(rel[1], 10), d = new Date();
+      if (rel[2] === "mo") d.setMonth(d.getMonth() - n);
+      else if (rel[2] === "d") d.setDate(d.getDate() - n);
+      else if (rel[2] === "w") d.setDate(d.getDate() - n * 7);
+      else if (rel[2] === "y") d.setFullYear(d.getFullYear() - n);
+      else if (rel[2] === "h") { /* сьогодні */ }
+      return d.toISOString().slice(0, 10);
+    }
+    var t = box.querySelector("time[datetime]");
+    if (t) { var d = t.getAttribute("datetime").slice(0, 10); if (/^\d{4}-\d\d-\d\d$/.test(d)) return d; }
+    var blob = text(box);
+    var m = blob.match(/(\d{1,2})\.(\d{1,2})\.(\d{4})/);
+    if (m) return m[3] + "-" + ("0" + m[2]).slice(-2) + "-" + ("0" + m[1]).slice(-2);
+    m = blob.match(/(\d{1,2})\s+([а-яіїє]{3,})/i);
+    if (m) {
+      for (var i = 0; i < MONTHS.length; i++) {
+        if (m[2].toLowerCase().indexOf(MONTHS[i]) === 0) {
+          var now = new Date(), year = now.getFullYear();
+          if (i > now.getMonth()) year -= 1;   // майбутній місяць = торік
+          return year + "-" + ("0" + (i + 1)).slice(-2) + "-" + ("0" + m[1]).slice(-2);
+        }
+      }
+    }
+    return null;
+  }
+
+  function collect() { return collectIn(document); }
+
+  function collectIn(root) {
+    var rows = [], tails = [];
+    var boxes = root.querySelectorAll(".proposal, .js-proposal");
+    for (var i = 0; i < boxes.length; i++) {
+      var box = boxes[i];
+      var id = box.getAttribute("data-id") || "";
+      var companyEl = box.querySelector('a[href*="/jobs/company-"]');
+      var posEl = box.querySelector('.job_title a, a[href^="/my/inbox/"]:not(.proposal-absolute-link)');
+      var blob = text(box);
+      var st = statusFrom(blob);
+
+      rows.push({
+        url: id ? "https://djinni.co/my/inbox/" + id + "/" : null,
+        company: text(companyEl) || "—",
+        position: text(posEl) || "—",
+        applied_on: dateFrom(box),
+        status: st.s,
+        status_on: st.s ? dateFrom(box) : null,
+        // Дата, виведена з «5mo», точна лише до місяця. Позначаємо прямо в
+        // записі: невідома точність гірша за відому неточність.
+        note: /\b\d+\s*(mo|w|y)\b/.test(blob)
+              ? "дата приблизна — обчислена з відносного віку на сторінці"
+              : (st.why || null)
+      });
+
+      // Решта тексту рядка — щоб побачити, якими словами Djinni позначає стан.
+      // Статус у видимій частині розмітки відсутній, тож перший прогін
+      // заразом є словником.
+      tails.push((st.why ? "[" + st.why + "] " : "[?] ") + blob.slice(0, 200));
+    }
+    return { rows: rows, tails: tails };
   }
 
   function send(rows, dry) {
@@ -85,33 +135,71 @@
     }).then(function (r) { return r.json(); });
   }
 
+  /* Архів — окрема сторінка (?bucket=archive), і вантажиться власним запитом.
+     Саме там 08.10 знайшлись десять відгуків, яких не було у вхідних: без
+     обходу кошиків журнал бачив би четвертину реальної картини. */
+  function fromHtml(html) {
+    var doc = new DOMParser().parseFromString(html, "text/html");
+    var saved = document.body;
+    try { return collectIn(doc); } finally { saved; }
+  }
+
+  function withBucket(bucket) {
+    return fetch("/my/inbox?bucket=" + bucket, { credentials: "include" })
+      .then(function (r) { return r.text(); })
+      .then(function (html) { return fromHtml(html); })
+      .catch(function () { return { rows: [], tails: [] }; });
+  }
+
   var found = collect();
+  Promise.all([withBucket("archive")]).then(function (extra) {
+    var seen = {};
+    for (var i = 0; i < found.rows.length; i++) seen[found.rows[i].url] = true;
+    for (var e = 0; e < extra.length; e++) {
+      for (var j = 0; j < extra[e].rows.length; j++) {
+        var row = extra[e].rows[j];
+        if (row.url && seen[row.url]) continue;
+        seen[row.url] = true;
+        found.rows.push(row);
+        found.tails.push(extra[e].tails[j]);
+      }
+    }
+    run(found);
+  });
+
+  function run(found) {
   if (!found.rows.length) {
-    alert("jobtrack: на сторінці не знайдено жодного рядка з посиланням на вакансію.\n\n" +
-          "Найімовірніше, розмітка інша, ніж очікувалось. Надішліть автору\n" +
-          "приклад HTML одного рядка — селектори буде уточнено.");
+    alert("jobtrack: на цій сторінці немає рядків .proposal.\n\n" +
+          "Якщо відгуки видно очима — надішліть автору розмітку одного рядка.");
     return;
   }
 
+  console.log("jobtrack — текст рядків (для уточнення словника статусів):\n" +
+              found.tails.join("\n\n"));
+
   send(found.rows, true).then(function (report) {
     var msg = "jobtrack — попередній перегляд (нічого ще не записано)\n\n" +
-      "Прочитано рядків: " + report.received + "\n" +
+      "Знайдено листувань: " + report.received + "\n" +
       "Буде створено нових: " + report.created + "\n" +
       "Зіставлено з наявними: " + report.matched + "\n" +
-      "Буде додано подій: " + report.events_added + "\n";
-    if (report.ambiguous.length)
-      msg += "\nНеоднозначні (можливий дубль у журналі): " + report.ambiguous.join(", ") + "\n";
-    if (found.unknown.length)
-      msg += "\nНезнайомі написання статусу (" + found.unknown.length + "): \n  " +
-             found.unknown.slice(0, 5).join("\n  ") + "\n";
-    msg += "\nЗаписати?";
+      "Буде додано подій: " + report.events_added + "\n\n";
+    for (var i = 0; i < found.rows.length; i++) {
+      var r = found.rows[i];
+      msg += "• " + r.company + " — " + r.position +
+             "  [" + (r.status || "стан не розпізнано") + "]" +
+             (r.applied_on ? " від " + r.applied_on : " (дата не знайдена)") + "\n";
+    }
+    if (report.ambiguous.length) msg += "\nНеоднозначні: " + report.ambiguous.join(", ") + "\n";
+    msg += "\nПовний текст рядків — у консолі.\n\nЗаписати?";
 
     if (!confirm(msg)) return;
     send(found.rows, false).then(function (done) {
-      alert("Записано: " + done.created + " нових, " + done.events_added + " подій.");
+      alert("Записано: " + done.created + " нових, " + done.events_added + " подій.\n\n" +
+            "Якщо стан не розпізнався — скопіюйте вивід із консолі в розмову,\n" +
+            "і словник статусів буде доповнено.");
     });
   }).catch(function (e) {
-    alert("jobtrack: не вдалося звернутися до " + API + "\n" + e +
-          "\n\nПеревірте, що стек піднято: docker compose up -d");
+    alert("jobtrack: не вдалося звернутися до " + API + "\n" + e);
   });
+  }
 })();

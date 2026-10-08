@@ -116,6 +116,10 @@ async def sync_page(request: Request):
                         if line.strip() and not line.strip().startswith("//"))
     return templates.TemplateResponse(request, "sync.html", {
         "snippet": js,
+        "diagnose": (BASE_DIR / "static" / "diagnose.js").read_text(encoding="utf-8"),
+        "snippet_dou": ((BASE_DIR / "static" / "collect_dou.js").read_text(encoding="utf-8")
+                        .replace("__API__", str(request.base_url).rstrip("/"))
+                        .replace("__TOKEN__", cfg.sync_token)),
         "bookmarklet": "javascript:" + quote(minified, safe=""),
         "token_set": bool(cfg.sync_token),
     })

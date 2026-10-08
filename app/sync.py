@@ -68,6 +68,10 @@ class SyncItem:
     status: str | None = None
     status_on: date | None = None
     note: str | None = None
+    # Яким саме резюме подавались. DOU показує ім'я файлу, Djinni — ні.
+    # Без цього поля воронка не може порівняти версії між собою, а саме
+    # заради такого порівняння журнал і ведеться.
+    cv_version: str | None = None
 
 
 @dataclass
@@ -140,6 +144,7 @@ class PlannedApplication:
     position: str
     url: str | None
     applied_on: date
+    cv_version: str | None = None
 
 
 @dataclass
@@ -188,7 +193,8 @@ def plan_sync(
             applied = item.applied_on or today
             plan.create.append(PlannedApplication(idx, item.company.strip(),
                                                   item.position.strip(),
-                                                  item.url, applied))
+                                                  item.url, applied,
+                                                  item.cv_version))
             app_id = None
             # Нова подача одразу стає кандидатом: якщо та сама вакансія
             # трапиться у списку двічі, другий рядок має зіставитись, а не

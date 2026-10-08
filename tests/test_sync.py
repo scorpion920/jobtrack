@@ -165,3 +165,26 @@ class TestPlanSync:
         src = inspect.getsource(module)
         for forbidden in ("selectinload", "session", "AsyncSession", "await "):
             assert forbidden not in src, f"у планувальник просочився {forbidden!r}"
+
+
+class TestCvVersionCarriesThrough:
+    """Версія резюме мусить доїхати до створеної подачі.
+
+    Це єдине поле, за яким воронка вміє порівняти варіанти резюме між собою —
+    тобто відповісти, чи взагалі щось дає адаптація під вакансію. DOU дає його
+    як ім'я файлу, Djinni не дає взагалі. Загубити його означає втратити
+    половину сенсу журналу, і загубити тихо: ніде нічого не впаде.
+    """
+
+    def test_version_reaches_planned_application(self):
+        plan = plan_sync([SyncItem(company="ARTJOKER", position="Python Developer",
+                                   cv_version="CV_ARTJOKER")],
+                         [], {}, date(2026, 10, 8))
+        assert plan.create[0].cv_version == "CV_ARTJOKER"
+
+    def test_absent_version_is_none_not_empty_string(self):
+        """None означає «невідомо», порожній рядок — «відомо, що порожнє».
+        У воронці це різні відра, і плутати їх не можна."""
+        plan = plan_sync([SyncItem(company="X", position="Dev")], [], {},
+                         date(2026, 10, 8))
+        assert plan.create[0].cv_version is None
