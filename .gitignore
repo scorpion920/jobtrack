@@ -1,0 +1,13 @@
+# Приватне: у публічному репозиторії персональних даних бути не може
+.env
+data/
+*.pdf
+*.docx
+
+# Службове
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.venv/
+venv/

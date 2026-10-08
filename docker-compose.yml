@@ -1,0 +1,37 @@
+# Локальний стек. Два сервіси, бо більше поки нема чого запускати:
+# збір вакансій (E2+) додасть `worker`, DOU — окремий `scraper` з Playwright.
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-jobtrack}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-jobtrack}
+      POSTGRES_DB: ${POSTGRES_DB:-jobtrack}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      # Без цього api стартує раніше за готовність бази і падає на першій міграції
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-jobtrack}"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    # Порт БД назовні НЕ публікуємо: api ходить внутрішньою мережею compose.
+    # Якщо треба підключитись psql-ом із хоста — підніміть з оверлеєм:
+    #   docker compose -f docker-compose.yml -f docker-compose.expose-db.yml up -d
+
+  api:
+    build: .
+    env_file: .env
+    depends_on:
+      db:
+        condition: service_healthy
+    command: >
+      sh -c "alembic upgrade head &&
+             uvicorn app.main:app --host 0.0.0.0 --port 8000"
+    ports:
+      - "8020:8000"
+    volumes:
+      - ./app:/app/app      # гаряче перечитування під час розробки
+
+volumes:
+  pgdata:

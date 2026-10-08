@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block title %}Подачі — jobtrack{% endblock %}
+{% block body %}
+<h1>Журнал подач</h1>
+<p class="sub">Усього записів: {{ applications|length }}. Подача без запису не існує —
+саме тому форма стоїть першою, а не внизу сторінки.</p>
+
+<form class="add" method="post" action="/ui/applications">
+  <div><label>Компанія</label><input name="company" required></div>
+  <div><label>Позиція</label><input name="position" required></div>
+  <div><label>Канал</label><select name="channel">
+    {% for c in channels %}<option value="{{ c.value }}">{{ c.value }}</option>{% endfor %}
+  </select></div>
+  <div><label>Дата подачі</label><input type="date" name="applied_on" required></div>
+  <div><label>Версія CV</label><input name="cv_version" placeholder="backend-ua"></div>
+  <div><label>Посилання</label><input name="url" placeholder="https://"></div>
+  <div><label>&nbsp;</label><button type="submit">Записати</button></div>
+</form>
+
+{% if not applications %}
+  <p class="empty">Ще жодного запису. Перший крок — внести те, що вже надсилали.</p>
+{% else %}
+<table>
+  <thead><tr>
+    <th>Дата</th><th>Компанія</th><th>Позиція</th>
+    <th class="hide-sm">Канал</th><th class="hide-sm">CV</th>
+    <th>Стан</th><th class="num">Тиша, днів</th>
+  </tr></thead>
+  <tbody>
+  {% for a in applications %}
+    <tr>
+      <td class="num">{{ a.applied_on }}</td>
+      <td>{% if a.url %}<a href="{{ a.url }}" target="_blank" rel="noopener">{{ a.company }}</a>
+          {% else %}{{ a.company }}{% endif %}</td>
+      <td>{{ a.position }}</td>
+      <td class="hide-sm">{{ a.channel.value }}</td>
+      <td class="hide-sm">{{ a.cv_version or "—" }}</td>
+      <td><span class="pill s-{{ a.current_status.value }}">{{ a.current_status.value }}</span></td>
+      <td class="num {% if a.days_silent and a.days_silent > 10 %}silent{% endif %}">
+        {{ a.days_silent if a.days_silent is not none else "—" }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}Воронка — jobtrack{% endblock %}
+{% block body %}
+<h1>Воронка</h1>
+<p class="sub">Заради цієї таблиці все й будувалося. Низький відсоток переглядів
+означає, що резюме не доходить до людини — винна воронка: вилка, стаж у профілі,
+вибір вакансій. Високий відсоток переглядів при низькому відсотку відповідей
+означає протилежне — винен сам документ.</p>
+
+<nav style="border:none;padding:0;margin-bottom:16px">
+  <a href="/funnel?by=channel">за каналом</a>
+  <a href="/funnel?by=cv_version">за версією CV</a>
+  <a href="/funnel?by=week">за тижнем</a>
+</nav>
+
+{% if not rows %}
+  <p class="empty">Поки нічого рахувати: у журналі {{ total }} записів.</p>
+{% else %}
+<table>
+  <thead><tr>
+    <th>{{ {"channel":"Канал","cv_version":"Версія CV","week":"Тиждень"}[by] }}</th>
+    <th class="num">Подано</th><th class="num">Переглянуто</th><th class="num">%</th>
+    <th class="num">Відповіли</th><th class="num">%</th>
+    <th class="num">Співбесіда</th><th class="num">Офер</th>
+  </tr></thead>
+  <tbody>
+  {% for r in rows %}
+    <tr>
+      <td>{{ r.bucket }}</td>
+      <td class="num">{{ r.sent }}</td>
+      <td class="num">{{ r.viewed }}</td>
+      <td class="num">{{ r.view_rate }}</td>
+      <td class="num">{{ r.responded }}</td>
+      <td class="num">{{ r.response_rate }}</td>
+      <td class="num">{{ r.interview }}</td>
+      <td class="num">{{ r.offer }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+{% endblock %}
