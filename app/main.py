@@ -25,6 +25,7 @@ from app.api.applications import router as applications_router
 from app.api.sync import router as sync_router
 from app.api.vacancies import router as vacancies_router
 from app.collect import collect
+from app.dedup import Publication, find_reposts
 from app.screen import Candidate, assess, find_alternative
 from app.screening import screen as screen_text
 from app.config import get_settings
@@ -205,6 +206,17 @@ async def vacancies(request: Request, message: str | None = None,
                                     fit=content.fit,
                                     matched=content.matched,
                                     concerns=content.concerns))
+
+    # Перевипуски: майданчик публікує ту саму вакансію вдруге, щоб підняти
+    # її у видачі. Старішу не ховаємо — на неї могло бути подано, і зникнення
+    # рядка виглядало б як втрата даних.
+    reposts = find_reposts([
+        Publication(url=v.url, source_key=v.source_key, company_norm=v.company_norm,
+                    title_norm=v.title_norm, posted_at=v.posted_at)
+        for v in view
+    ])
+    for v in view:
+        v.repost_of = reposts.get(v.url)
 
     # Той самий варіант посади в доступному вигляді, якщо він є.
     pool = [Candidate(url=v.url, company_norm=v.company_norm,

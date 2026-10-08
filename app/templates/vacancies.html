@@ -28,7 +28,7 @@
 {% else %}
 <table>
   <tr>
-    <th>опубліковано</th><th>компанія / посада</th><th>формат</th>
+    <th>опубліковано</th><th>де</th><th>компанія / посада</th><th>формат</th>
     <th>рок.</th><th>англ.</th><th class="num">відгуків</th><th>$</th>
     <th>суть</th><th></th>
   </tr>
@@ -36,9 +36,12 @@
   <tr{% if v.state == 'blocked' %} style="background:rgba(180,83,9,.07)"
      {% elif v.state == 'unchecked' %} style="opacity:.62"{% endif %}>
     <td class="sub">{{ v.posted_at.strftime('%d.%m') if v.posted_at else '—' }}</td>
+    <td class="sub">{{ v.source_key }}</td>
     <td>
       <a href="{{ v.url }}" target="_blank" rel="noopener">{{ v.title }}</a><br>
       <span class="sub">{{ v.company }}{% if v.location %} · {{ v.location }}{% endif %}</span>
+      {% if v.repost_of %}<br><span class="sub" style="color:#b45309">перевипуск —
+        <a href="{{ v.repost_of }}" target="_blank" rel="noopener">є свіжіша публікація</a></span>{% endif %}
     </td>
     <td class="sub">
       {% if v.format == 'remote' %}віддалено
@@ -69,7 +72,10 @@
 Усього <strong>{{ rows|length }}</strong>:
 перевірено й підходить — <strong>{{ rows|selectattr('state','equalto','ok')|list|length }}</strong>,
 потребує перегляду вручну — {{ rows|selectattr('state','equalto','unchecked')|list|length }},
-відсіяно — {{ rows|selectattr('state','equalto','blocked')|list|length }}.</p>
+відсіяно — {{ rows|selectattr('state','equalto','blocked')|list|length }}.
+{% set rp = rows|selectattr('repost_of')|list|length %}{% if rp %}
+Серед них {{ rp }} — повторні публікації тієї самої вакансії тим самим
+майданчиком; вони лишаються видимими, бо на них могло бути подано.{% endif %}</p>
 <p class="sub">Другий стовпчик великий не випадково: DOU не повідомляє ані років
 досвіду, ані рівня англійської, тому його вакансії формально відсіяти нема чим.
 Зараховувати їх до придатних означало б давати впевненість, якої немає.</p>
