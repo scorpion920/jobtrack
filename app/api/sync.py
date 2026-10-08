@@ -22,7 +22,9 @@ from sqlalchemy.orm import selectinload
 
 from app.config import get_settings
 from app.db import get_session
-from app.models import Application, ApplicationEvent, Channel, Status, SyncRun
+from app.linking import vacancy_key
+from app.models import (Application, ApplicationEvent, Channel, Status,
+                        SyncRun, Vacancy)
 from app.sync import Candidate, SyncItem, plan_sync
 
 router = APIRouter(prefix="/api/sync", tags=["sync"])
@@ -133,12 +135,22 @@ async def sync(payload: SyncIn,
         await session.commit()
         return report
 
+    # Зібрані вакансії за ключем «майданчик + номер» — щоб нова подача одразу
+    # знала, на що саме вона подана. Без цього зв'язок довелось би відновлювати
+    # пізніше, а дані для нього (адреса) з часом втрачаються.
+    known_vacancies = {
+        (v.source_key, v.external_id): v.id
+        for v in (await session.execute(select(Vacancy))).scalars()
+    }
+
     created_ids: dict[int, int] = {}
     for planned in plan.create:
+        key = vacancy_key(planned.url)
         obj = Application(company=planned.company, position=planned.position,
                           url=planned.url, channel=payload.source,
                           applied_on=planned.applied_on,
-                          cv_version=planned.cv_version)
+                          cv_version=planned.cv_version,
+                          vacancy_id=known_vacancies.get(key) if key else None)
         session.add(obj)
         await session.flush()
         created_ids[planned.item_index] = obj.id

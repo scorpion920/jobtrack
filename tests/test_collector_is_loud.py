@@ -59,3 +59,20 @@ def test_userscript_can_update_itself():
     assert "@updateURL" in text and "@downloadURL" in text, (
         "правки збирача мусять доїжджати до вже встановленого скрипта"
     )
+
+
+def test_userscript_does_not_rely_on_a_timer_alone():
+    """Chrome заморожує фонові вкладки, і `setInterval` у них зупиняється.
+
+    08.10.2026 збирач мовчав три години поспіль при відкритих вкладках
+    Djinni — не через помилку в скрипті, а тому що браузер так влаштований.
+    Головним сигналом мусить бути повернення уваги до вкладки: воно
+    відбувається саме тоді, коли свіжі статуси найпотрібніші.
+    """
+    text = USERSCRIPT.read_text(encoding="utf-8")
+    assert "visibilitychange" in text, (
+        "без реакції на повернення до вкладки збирач мовчить, щойно Chrome "
+        "заморозить фонову вкладку"
+    )
+    assert 'visibilityState === "visible"' in text
+    assert 'addEventListener("focus"' in text

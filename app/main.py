@@ -26,6 +26,7 @@ from app.api.sync import router as sync_router
 from app.api.vacancies import router as vacancies_router
 from app.collect import collect
 from app.dedup import Publication, find_reposts
+from app.linking import vacancy_key
 from app.screen import Candidate, assess, find_alternative
 from app.screening import screen as screen_text
 from app.config import get_settings
@@ -114,10 +115,18 @@ async def ui_create(
 ):
     """Форма з головної сторінки. Окремо від REST, бо браузер уміє лише
     `application/x-www-form-urlencoded` без JavaScript, а SPA тут навмисно немає."""
+    key = vacancy_key(url.strip() or None)
+    linked = None
+    if key:
+        linked = (await session.execute(
+            select(Vacancy.id).where(Vacancy.source_key == key[0],
+                                     Vacancy.external_id == key[1])
+        )).scalar_one_or_none()
+
     item = Application(
         company=company.strip(), position=position.strip(), channel=channel,
         applied_on=applied_on, cv_version=cv_version.strip() or None,
-        url=url.strip() or None,
+        url=url.strip() or None, vacancy_id=linked,
     )
     session.add(item)
     await session.flush()
@@ -207,6 +216,18 @@ async def vacancies(request: Request, message: str | None = None,
                                     matched=content.matched,
                                     concerns=content.concerns))
 
+    # На які з вакансій уже подано. Головне число циклу: воно відповідає на
+    # питання «чи опрацьовано те, що система знайшла», якого без зв'язку не
+    # можна було поставити взагалі.
+    applied = {
+        a.vacancy_id: a.applied_on
+        for a in (await session.execute(
+            select(Application).where(Application.vacancy_id.isnot(None))
+        )).scalars()
+    }
+    for v in view:
+        v.applied_on = applied.get(v.id)
+
     # Перевипуски: майданчик публікує ту саму вакансію вдруге, щоб підняти
     # її у видачі. Старішу не ховаємо — на неї могло бути подано, і зникнення
     # рядка виглядало б як втрата даних.
@@ -230,7 +251,7 @@ async def vacancies(request: Request, message: str | None = None,
     # нічого не варта, якщо на вакансію вже 300 відгуків.
     _FIT = {"strong": 0, "possible": 1, "weak": 2}
     _STATE = {"ok": 0, "unchecked": 1, "blocked": 2}
-    view.sort(key=lambda v: (_STATE[v.state], _FIT[v.fit],
+    view.sort(key=lambda v: (v.applied_on is not None, _STATE[v.state], _FIT[v.fit],
                              v.replies if v.replies is not None else 10 ** 6))
 
     last = max((s.last_run_at for s in sources if s.last_run_at), default=None)

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         jobtrack — автоматичний збір статусів Djinni
 // @namespace    jobtrack
-// @version      1.1
+// @version      1.2
 // @description  Періодично читає сторінку відгуків у ВАШІЙ сесії й надсилає статуси в локальний журнал. Нічого не зберігає, нікуди не логіниться.
 // @match        https://djinni.co/*
 // @run-at       document-idle
@@ -176,7 +176,27 @@
     } catch (e) { return true; }
   }
 
+  /* Чому не лише таймер.
+   *
+   * 08.10.2026 збирач мовчав три години поспіль при відкритих вкладках
+   * Djinni. Причина не в скрипті: Chrome ЗАМОРОЖУЄ фонові вкладки після
+   * кількох хвилин бездіяльності, і `setInterval` у них просто зупиняється.
+   * Покладатися на таймер у фоновій вкладці неправильно за дизайном
+   * браузера, а не через помилку.
+   *
+   * Тому головний сигнал — повернення уваги до вкладки. Воно відбувається
+   * саме тоді, коли користувач дивиться на Djinni, тобто коли свіжі статуси
+   * найпотрібніші. Таймер лишається другою лінією на випадок вкладки, яка
+   * весь час на видноті.
+   */
+  function maybeSync() { if (due()) sync(); }
+
   // Перший прогін — із затримкою, щоб не змагатися з завантаженням сторінки.
-  setTimeout(function () { if (due()) sync(); }, 8000);
-  setInterval(function () { if (due()) sync(); }, EVERY_MIN * 60 * 1000);
+  setTimeout(maybeSync, 8000);
+  setInterval(maybeSync, EVERY_MIN * 60 * 1000);
+
+  document.addEventListener("visibilitychange", function () {
+    if (document.visibilityState === "visible") maybeSync();
+  });
+  window.addEventListener("focus", maybeSync);
 })();

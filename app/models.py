@@ -118,6 +118,14 @@ class Application(Base):
     salary_asked: Mapped[int | None] = mapped_column(Integer)
     notes: Mapped[str | None] = mapped_column(Text)
 
+    # Зібрана вакансія, на яку це подача. NULL — звичайний стан: подача могла
+    # прийти поштою, з LinkedIn або бути внесеною до появи каналу. Зв'язок
+    # будується за НОМЕРОМ вакансії в адресі, бо сама адреса несе сліди
+    # шляху: `?applied=ok`, `?sender=`, сторінка листування.
+    vacancy_id: Mapped[int | None] = mapped_column(
+        ForeignKey("vacancy.id", ondelete="SET NULL")
+    )
+
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     events: Mapped[list["ApplicationEvent"]] = relationship(
@@ -359,3 +367,31 @@ class VacancyRaw(Base):
 
     payload: Mapped[dict] = mapped_column(JSONB, default=dict)
     fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class Notification(Base):
+    """Журнал надісланого — щоб один привід дав одне повідомлення.
+
+    Без нього кожен прогін збору надсилав би те саме знову: вакансія, яка
+    висить тиждень, щогодини виглядає однаково «новою». Сповіщення, що
+    повторюються, перестають читати — і це той самий збиток, що й від їх
+    відсутності, тільки непомітніший.
+
+    `key` описує ПРИВІД, а не момент. Ключ із датою всередині гасив би
+    повтори рівно на добу, тобто не гасив би взагалі.
+    """
+
+    __tablename__ = "notification"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    key: Mapped[str] = mapped_column(String(200), unique=True)
+    text: Mapped[str] = mapped_column(Text)
+
+    # Чи дійшло. Невдала відправка лишається в журналі з причиною: інакше
+    # «не надіслано» і «надіслано й загубилось» виглядали б однаково.
+    delivered: Mapped[bool] = mapped_column(Boolean, default=False)
+    error: Mapped[str | None] = mapped_column(Text)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    __table_args__ = (Index("ix_notification_created", "created_at"),)

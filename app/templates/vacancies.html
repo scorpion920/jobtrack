@@ -40,6 +40,7 @@
     <td>
       <a href="{{ v.url }}" target="_blank" rel="noopener">{{ v.title }}</a><br>
       <span class="sub">{{ v.company }}{% if v.location %} · {{ v.location }}{% endif %}</span>
+      {% if v.applied_on %}<br><span class="pill s-viewed">подано {{ v.applied_on.strftime('%d.%m') }}</span>{% endif %}
       {% if v.repost_of %}<br><span class="sub" style="color:#b45309">перевипуск —
         <a href="{{ v.repost_of }}" target="_blank" rel="noopener">є свіжіша публікація</a></span>{% endif %}
     </td>
@@ -72,7 +73,8 @@
 Усього <strong>{{ rows|length }}</strong>:
 перевірено й підходить — <strong>{{ rows|selectattr('state','equalto','ok')|list|length }}</strong>,
 потребує перегляду вручну — {{ rows|selectattr('state','equalto','unchecked')|list|length }},
-відсіяно — {{ rows|selectattr('state','equalto','blocked')|list|length }}.
+відсіяно — {{ rows|selectattr('state','equalto','blocked')|list|length }};
+подано — <strong>{{ rows|selectattr('applied_on')|list|length }}</strong>.
 {% set rp = rows|selectattr('repost_of')|list|length %}{% if rp %}
 Серед них {{ rp }} — повторні публікації тієї самої вакансії тим самим
 майданчиком; вони лишаються видимими, бо на них могло бути подано.{% endif %}</p>
