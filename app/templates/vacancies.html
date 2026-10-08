@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block title %}Вакансії — jobtrack{% endblock %}
+{% block body %}
+<h1>Вакансії</h1>
+<p class="sub">Зібрано з каналів. Жовтим позначено те, що <strong>не підходить
+за незмінними умовами</strong> — формат роботи й поріг років, який Djinni
+застосовує жорстко: кнопка подачі просто неактивна.</p>
+
+<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:18px">
+  {% for s in sources %}
+  <form method="post" action="/vacancies/collect/{{ s.key }}" style="display:inline">
+    <button type="submit">Зібрати {{ s.label or s.key }}</button>
+  </form>
+  {% endfor %}
+  {% if last_run %}<span class="sub">останній збір: {{ last_run }}</span>{% endif %}
+</div>
+
+{% if message %}<p class="sub" style="color:var(--accent)"><strong>{{ message }}</strong></p>{% endif %}
+{% for s in sources if s.last_error %}
+<p class="sub" style="color:#b45309"><strong>{{ s.key }}:</strong> {{ s.last_error }}</p>
+{% endfor %}
+
+{% if not rows %}
+<p class="sub">Поки порожньо. Натисніть «Зібрати» — це зайняти́ме кілька секунд
+(між сторінками витримується пауза, щоб не створювати навантаження на майданчик).</p>
+{% else %}
+<table>
+  <tr>
+    <th>опубліковано</th><th>компанія / посада</th><th>формат</th>
+    <th>рок.</th><th>англ.</th><th class="num">відгуків</th><th>$</th><th></th>
+  </tr>
+  {% for v in rows %}
+  <tr{% if v.blocked %} style="background:rgba(180,83,9,.07)"{% endif %}>
+    <td class="sub">{{ v.posted_at.strftime('%d.%m') if v.posted_at else '—' }}</td>
+    <td>
+      <a href="{{ v.url }}" target="_blank" rel="noopener">{{ v.title }}</a><br>
+      <span class="sub">{{ v.company }}{% if v.location %} · {{ v.location }}{% endif %}</span>
+    </td>
+    <td class="sub">
+      {% if v.format == 'remote' %}віддалено
+      {% elif v.format == 'office' %}<strong>офіс</strong>
+      {% elif v.format == 'hybrid' %}гібрид
+      {% else %}<span title="майданчик не повідомив — треба відкрити й подивитись">не вказано</span>{% endif %}
+      {% if v.part_time %}<br>part-time{% endif %}
+    </td>
+    <td class="num">{{ v.years_required if v.years_required is not none else '—' }}</td>
+    <td class="sub">{{ (v.english or '—')|upper }}</td>
+    <td class="num">{{ v.replies if v.replies is not none else '—' }}</td>
+    <td class="sub">{{ '$' * v.salary_tier if v.salary_tier else '' }}</td>
+    <td class="sub">{{ v.reason or '' }}</td>
+  </tr>
+  {% endfor %}
+</table>
+<p class="sub" style="margin-top:14px">Усього {{ rows|length }};
+придатних за формальними умовами — <strong>{{ rows|rejectattr('blocked')|list|length }}</strong>.
+Кількість відгуків — головне, чого не видно при ручному перегляді:
+вакансія з 341 відгуком і з 60 виглядають у переліку однаково.</p>
+{% endif %}
+{% endblock %}

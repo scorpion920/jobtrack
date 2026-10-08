@@ -18,6 +18,7 @@ from datetime import date, datetime
 from sqlalchemy import (
     Boolean, Date, DateTime, Enum, ForeignKey, Index, Integer, String, Text, func,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db import Base
@@ -230,3 +231,128 @@ class SyncRun(Base):
     at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     __table_args__ = (Index("ix_sync_run_at", "at"),)
+
+
+class SourceConfig(Base):
+    """Налаштований канал виявлення вакансій.
+
+    Назва класу відрізняється від `app.sources.base.Source` навмисно: там —
+    КОНТРАКТ (як читати), тут — НАЛАШТУВАННЯ (що саме читати). Однакові імена
+    в обох ролях означали б, що перший же модуль, якому треба і те, й інше,
+    починається з перейменувального імпорту.
+
+    Канал живе в БД, а не в коді, з однієї причини: додати Telegram-канал або
+    чужий сайт має бути записом, а не релізом. У коді лишається лише те, що
+    справді різне — як саме читати (адаптер), а не ЩО саме читати.
+
+    `last_error` існує, бо найчастіша поломка збору — не падіння, а тиша:
+    майданчик змінив розмітку, і канал повертає нуль вакансій, нічим це не
+    позначаючи. Стан каналу має бути видимим, як і стан збирача статусів.
+    """
+
+    __tablename__ = "source"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+
+    # Під цим ключем канал відомий адаптерові: "djinni", "dou",
+    # "tg:python_jobs_ua". Унікальний.
+    key: Mapped[str] = mapped_column(String(80), unique=True)
+
+    # Який адаптер його читає. Кілька каналів можуть мати один вид:
+    # десять Telegram-каналів — один `telegram`.
+    kind: Mapped[str] = mapped_column(String(40))
+    label: Mapped[str] = mapped_column(String(200), default="")
+
+    # Параметри саме цього каналу: адреса переліку, фільтри, ім'я каналу.
+    # JSONB, бо в кожного виду вони свої, і зводити їх до спільних колонок
+    # означало б міняти схему при додаванні каналу — рівно те, чого уникаємо.
+    params: Mapped[dict] = mapped_column(JSONB, default=dict)
+
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+
+    last_run_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_found: Mapped[int | None] = mapped_column(Integer)
+    last_error: Mapped[str | None] = mapped_column(Text)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class Vacancy(Base):
+    """Вакансія у нормалізованому вигляді.
+
+    `first_seen` і `last_seen` — не метадані, а зміст: вакансія, яку майданчик
+    показує третій тиждень, і щойно опублікована вимагають різної поведінки,
+    а зникнення з переліку означає, що її закрили.
+
+    Чому ознаки лежать окремими колонками, а не лише в `payload`: за ними
+    фільтрують, а фільтрувати по JSON означає або індекс на кожен ключ, або
+    повний перебір. Сире при цьому нікуди не дівається — воно у `vacancy_raw`.
+    """
+
+    __tablename__ = "vacancy"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+
+    source_key: Mapped[str] = mapped_column(String(80))
+    external_id: Mapped[str] = mapped_column(String(80))
+
+    url: Mapped[str] = mapped_column(String(600))
+    title: Mapped[str] = mapped_column(String(300))
+    company: Mapped[str] = mapped_column(String(200))
+
+    # Канонічні форми для другого рівня дедуплікації — коли та сама вакансія
+    # приходить різними каналами під різними посиланнями.
+    company_norm: Mapped[str] = mapped_column(String(200), default="")
+    title_norm: Mapped[str] = mapped_column(String(300), default="")
+
+    posted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    # Витлумачені ознаки. None скрізь означає «майданчик не повідомив», і це
+    # НЕ дорівнює «підходить»: вакансія без позначки формату може виявитись
+    # офісною (перевірено на Precoro 08.10.2026).
+    format: Mapped[str | None] = mapped_column(String(20))
+    years_required: Mapped[int | None] = mapped_column(Integer)
+    english: Mapped[str | None] = mapped_column(String(20))
+    part_time: Mapped[bool] = mapped_column(Boolean, default=False)
+    location: Mapped[str | None] = mapped_column(String(200))
+
+    # Конкуренція. Головне число, якого не видно при ручному перегляді:
+    # 341 відгук і 60 відгуків — різні вакансії за шансами, а виглядають
+    # у переліку однаково.
+    replies: Mapped[int | None] = mapped_column(Integer)
+    views: Mapped[int | None] = mapped_column(Integer)
+    salary_tier: Mapped[int | None] = mapped_column(Integer)
+
+    raw_text: Mapped[str] = mapped_column(Text, default="")
+
+    first_seen: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    last_seen: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    __table_args__ = (
+        # Перший рівень дедуплікації — на рівні схеми, а не коду: той самий
+        # канал не може привезти ту саму вакансію двічі навіть помилково.
+        Index("uq_vacancy_source_external", "source_key", "external_id", unique=True),
+        Index("ix_vacancy_posted", "posted_at"),
+        Index("ix_vacancy_dedup", "company_norm", "title_norm"),
+    )
+
+
+class VacancyRaw(Base):
+    """Сире тіло вакансії, як його віддав канал.
+
+    Зберігається окремо з тієї ж причини, що й `raw_document` у прогнозній
+    системі: переразбір не повинен вимагати нового походу в мережу. Коли
+    тлумачення ознак виявиться неповним — а воно виявиться, — виправлений
+    розбір проганяється по збереженому, а не по тому, що майданчик показує
+    сьогодні.
+    """
+
+    __tablename__ = "vacancy_raw"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    vacancy_id: Mapped[int] = mapped_column(
+        ForeignKey("vacancy.id", ondelete="CASCADE"), unique=True
+    )
+
+    payload: Mapped[dict] = mapped_column(JSONB, default=dict)
+    fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

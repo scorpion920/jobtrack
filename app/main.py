@@ -7,6 +7,7 @@ SPA тут немає навмисно. Поверхня — три сторін
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
 from urllib.parse import quote
 
 from datetime import date
@@ -22,10 +23,14 @@ from sqlalchemy.orm import selectinload
 
 from app.api.applications import router as applications_router
 from app.api.sync import router as sync_router
+from app.api.vacancies import router as vacancies_router
+from app.collect import collect
+from app.screen import assess
 from app.config import get_settings
 from app.db import get_session
 from app.funnel import build as build_funnel
-from app.models import Application, ApplicationEvent, Channel, Status, SyncRun
+from app.models import (Application, ApplicationEvent, Channel, SourceConfig,
+                        Status, SyncRun, Vacancy)
 
 BASE_DIR = Path(__file__).resolve().parent
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
@@ -48,6 +53,7 @@ app.add_middleware(
 
 app.include_router(applications_router)
 app.include_router(sync_router)
+app.include_router(vacancies_router)
 
 
 @app.get("/health")
@@ -168,6 +174,50 @@ async def sync_page(request: Request,
         "token_set": bool(cfg.sync_token),
         "runs": runs,
     })
+
+
+@app.get("/vacancies", response_class=HTMLResponse)
+async def vacancies(request: Request, message: str | None = None,
+                    session: AsyncSession = Depends(get_session)):
+    """Перелік зібраних вакансій.
+
+    Сортування — за свіжістю: вакансія, яку щойно опублікували, має шанс, що
+    вже відсутній у тої, яка висить третій тиждень із трьома сотнями відгуків.
+    """
+    rows = list((await session.execute(
+        select(Vacancy).order_by(Vacancy.posted_at.desc().nullslast())
+    )).scalars())
+    sources = list((await session.execute(
+        select(SourceConfig).order_by(SourceConfig.key)
+    )).scalars())
+
+    view = []
+    for v in rows:
+        verdict = assess(format=v.format, years_required=v.years_required,
+                         english=v.english)
+        view.append(SimpleNamespace(**{c.name: getattr(v, c.name)
+                                       for c in Vacancy.__table__.columns},
+                                    blocked=verdict.blocked, reason=verdict.reason))
+
+    last = max((s.last_run_at for s in sources if s.last_run_at), default=None)
+    return templates.TemplateResponse(request, "vacancies.html", {
+        "rows": view, "sources": sources, "message": message,
+        "last_run": last.strftime("%d.%m %H:%M") if last else None,
+    })
+
+
+@app.post("/vacancies/collect/{key}")
+async def vacancies_collect(key: str, session: AsyncSession = Depends(get_session)):
+    config = (await session.execute(
+        select(SourceConfig).where(SourceConfig.key == key)
+    )).scalar_one_or_none()
+    if not config:
+        return RedirectResponse(f"/vacancies?message=каналу+{key}+немає", status_code=303)
+
+    report = await collect(session, config)
+    note = (f"{key}: знайдено {report.found}, нових {report.created}, "
+            f"оновлено {report.refreshed}") if report.ok else f"{key}: {report.error}"
+    return RedirectResponse(f"/vacancies?message={quote(note)}", status_code=303)
 
 
 @app.get("/funnel", response_class=HTMLResponse)
