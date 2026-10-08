@@ -293,6 +293,9 @@ class Vacancy(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
 
+    # Майданчик ("djinni"), а НЕ канал ("djinni:ai"). Унікальність за
+    # (source_key, external_id) саме тому й працює: вакансія, знайдена
+    # кількома фільтрами одного сайту, лишається одним записом.
     source_key: Mapped[str] = mapped_column(String(80))
     external_id: Mapped[str] = mapped_column(String(80))
 

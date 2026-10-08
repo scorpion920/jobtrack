@@ -95,3 +95,23 @@ def test_nothing_touches_orm():
     text = Path(__file__).parent.parent.joinpath("app", "ingest.py").read_text(encoding="utf-8")
     for forbidden in ("from app.models", "AsyncSession", "session.", "select("):
         assert forbidden not in text, f"ORM протік у чисте ядро: {forbidden}"
+
+
+def test_same_vacancy_from_two_filters_of_one_site_is_one_record():
+    """Канал ≠ майданчик.
+
+    Djinni з фільтром «Python» і з фільтром «AI/ML» знаходять ту саму
+    вакансію. Вона має лишитись ОДНИМ записом: канал, яким її знайшли, —
+    властивість прогону збору, а не вакансії. Перевірено на живому зборі
+    08.10.2026: `djinni:ai` віддав 15 вакансій, з яких 14 нових і 1 вже
+    відома з каналу `djinni`.
+    """
+    raw = RawVacancy(source_key="djinni", external_id="850367",
+                     url="https://djinni.co/jobs/850367-x/", title="Python Integration Engineer",
+                     company="Broscorp", payload={"replies": 60})
+    known = [KnownVacancy(id=11, source_key="djinni", external_id="850367",
+                          company_norm="broscorp", title_norm="python integration engineer",
+                          replies=60)]
+    plan = plan_ingest([raw], known, NOW)
+    assert plan.create == []
+    assert len(plan.refresh) == 1

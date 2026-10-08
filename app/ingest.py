@@ -125,7 +125,9 @@ def plan_ingest(rows: list[RawVacancy], known: list[KnownVacancy],
             raw=raw, company_norm=company_norm, title_norm=title_norm,
             format=facts.format, years_required=facts.years_required,
             english=facts.english, part_time=facts.part_time,
-            location=facts.location,
+            # Канал може повідомити локацію окремо (DOU), бо в нього вона
+            # не є ознакою у стилі Djinni.
+            location=facts.location or raw.payload.get("location"),
         ))
 
     return plan

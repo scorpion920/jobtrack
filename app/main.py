@@ -197,7 +197,9 @@ async def vacancies(request: Request, message: str | None = None,
                          english=v.english)
         view.append(SimpleNamespace(**{c.name: getattr(v, c.name)
                                        for c in Vacancy.__table__.columns},
-                                    blocked=verdict.blocked, reason=verdict.reason))
+                                    blocked=verdict.blocked, reason=verdict.reason,
+                                    state=verdict.state,
+                                    unchecked=", ".join(verdict.unchecked)))
 
     last = max((s.last_run_at for s in sources if s.last_run_at), default=None)
     return templates.TemplateResponse(request, "vacancies.html", {

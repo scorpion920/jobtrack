@@ -15,10 +15,12 @@ from typing import Callable
 
 from app.sources.base import Source
 from app.sources.djinni import DjinniSource
+from app.sources.dou import DouSource
 
 # kind → як зібрати адаптер із ключа та параметрів каналу.
 BUILDERS: dict[str, Callable[[str, dict], Source]] = {
     "djinni": DjinniSource,
+    "dou": DouSource,
 }
 
 
