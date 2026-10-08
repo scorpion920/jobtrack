@@ -41,3 +41,42 @@ def test_silence_counted_from_last_event():
     app = _app(date.today() - timedelta(days=30),
                [(Status.viewed, date.today() - timedelta(days=3))])
     assert app.days_silent == 3
+
+
+class TestSameDayOrdering:
+    """Дві події одним днем — звичайна річ: Djinni показує вік із точністю до
+    місяця, тож «надіслано» і «відмовлено» отримують однакову дату.
+
+    До 08.10 переможцем ставав запис із більшим id, тобто порядок вставки.
+    У журналі це дало дві подачі зі станом «надіслано», хоча насправді там
+    була відмова — журнал брехав саме там, де він найпотрібніший.
+    """
+
+    def test_rejection_beats_sent_on_the_same_day(self):
+        app = _app(date(2026, 2, 8), [(Status.rejected, date(2026, 2, 8)),
+                                      (Status.sent, date(2026, 2, 8))])
+        assert app.current_status is Status.rejected
+
+    def test_insertion_order_does_not_matter(self):
+        a = _app(date(2026, 2, 8), [(Status.sent, date(2026, 2, 8)),
+                                    (Status.rejected, date(2026, 2, 8))])
+        b = _app(date(2026, 2, 8), [(Status.rejected, date(2026, 2, 8)),
+                                    (Status.sent, date(2026, 2, 8))])
+        assert a.current_status is b.current_status is Status.rejected
+
+    def test_offer_beats_rejection_on_the_same_day(self):
+        app = _app(date(2026, 2, 8), [(Status.rejected, date(2026, 2, 8)),
+                                      (Status.offer, date(2026, 2, 8))])
+        assert app.current_status is Status.offer
+
+    def test_later_date_still_wins_over_more_advanced_status(self):
+        """Шкала — лише для нічиєї за датою. Пізніша подія завжди сильніша:
+        відмова через тиждень після запрошення скасовує запрошення."""
+        app = _app(date(2026, 2, 1), [(Status.invited, date(2026, 2, 1)),
+                                      (Status.rejected, date(2026, 2, 8))])
+        assert app.current_status is Status.rejected
+
+    def test_viewed_beats_sent_on_the_same_day(self):
+        app = _app(date(2026, 2, 8), [(Status.viewed, date(2026, 2, 8)),
+                                      (Status.sent, date(2026, 2, 8))])
+        assert app.current_status is Status.viewed

@@ -56,6 +56,26 @@ class Status(str, enum.Enum):
     ghosted = "ghosted"
 
 
+# Наскільки далеко стан просунув подачу. Потрібно для випадку, коли кілька
+# подій мають ОДНУ дату: на Djinni вік показано з точністю до місяця, тож
+# «надіслано» і «відмовлено» нерідко отримують однакове число. Без цієї шкали
+# переможцем ставав запис із більшим id — тобто порядок вставки, — і подача
+# з відмовою показувалась як «надіслано». Журнал тоді бреше саме там, де він
+# найпотрібніший.
+_ADVANCE: dict[str, int] = {
+    "ghosted": -1,
+    "sent": 0,
+    "viewed": 1,
+    "test_task": 2,
+    "invited": 3,
+    "interview": 4,
+    # Кінцеві стани переважають усе: далі подача не рухається.
+    "withdrawn": 8,
+    "rejected": 9,
+    "offer": 10,
+}
+
+
 class Application(Base):
     __tablename__ = "application"
 
@@ -94,7 +114,10 @@ class Application(Base):
         """Останній стан за датою події. Без подій подача вважається надісланою."""
         if not self.events:
             return Status.sent
-        return max(self.events, key=lambda e: (e.occurred_on, e.id)).status
+        return max(
+            self.events,
+            key=lambda e: (e.occurred_on, _ADVANCE.get(e.status.value, 0), e.id or 0),
+        ).status
 
     @property
     def days_silent(self) -> int | None:

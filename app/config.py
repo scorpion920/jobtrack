@@ -27,7 +27,14 @@ class Settings(BaseSettings):
     # Список, а не "*": зірочка дозволила б будь-якій відкритій сторінці
     # стукати в локальний сервіс. Токен це зупинив би, але покладатися на
     # один рубіж там, де дешево мати два, не варто.
-    cors_origins: str = "https://djinni.co,https://jobs.dou.ua,https://www.linkedin.com"
+    #
+    # ⚠️ `dou.ua` і `jobs.dou.ua` — РІЗНІ джерела з погляду браузера.
+    # Сторінка з відгуками лежить на першому, вакансії — на другому; дозвіл
+    # лише для `jobs.` не допоміг, і помилка знову виглядала як «сервер
+    # недоступний».
+    cors_origins: str = (
+        "https://djinni.co,https://jobs.dou.ua,https://dou.ua,https://www.linkedin.com"
+    )
 
     telegram_bot_token: str = ""
     telegram_chat_id: str = ""

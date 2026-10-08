@@ -100,14 +100,19 @@
     for (var i = 0; i < boxes.length; i++) {
       var box = boxes[i];
       var id = box.getAttribute("data-id") || "";
-      var companyEl = box.querySelector('a[href*="/jobs/company-"]');
+      // Посилання на компанію містить і назву, і крапку-роздільник, і ім'я
+      // рекрутера. Перший прогін 08.10 записав «Insiders · Khrystyna» як назву
+      // компанії — беремо лише перший внутрішній <span>, а як запобіжник
+      // відтинаємо все після роздільника.
+      var companyLink = box.querySelector('a[href*="/jobs/company-"]');
+      var companyEl = companyLink ? (companyLink.querySelector("span") || companyLink) : null;
       var posEl = box.querySelector('.job_title a, a[href^="/my/inbox/"]:not(.proposal-absolute-link)');
       var blob = text(box);
       var st = statusFrom(blob);
 
       rows.push({
         url: id ? "https://djinni.co/my/inbox/" + id + "/" : null,
-        company: text(companyEl) || "—",
+        company: (text(companyEl).split("·")[0].trim()) || "—",
         position: text(posEl) || "—",
         applied_on: dateFrom(box),
         status: st.s,
