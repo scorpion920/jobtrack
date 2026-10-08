@@ -180,3 +180,25 @@ def test_vacancy_built_around_a_vendor_platform_is_a_stop():
     m = screen(text, "Junior Data Platform Engineer")
     assert m.fit == "weak"
     assert any("Oracle" in c for c in m.concerns)
+
+
+def test_experience_threshold_is_read_from_the_text():
+    """DOU не повідомляє років окремим полем.
+
+    Із 80 зібраних вакансій 46 потрапили в «потребує перегляду» саме через
+    це. DOIT Software вимагає «3–5 years of professional experience» прямо
+    в тексті — без цього правила вакансія виглядала б придатною.
+    """
+    for text in ("3–5 years of professional experience in data science",
+                 "5+ years of experience with Python",
+                 "досвід роботи від 3 років"):
+        concerns = screen(text, "Python Developer").concerns
+        assert any("3+ років" in c for c in concerns), text
+
+
+def test_one_or_two_years_is_not_a_threshold():
+    """«1 рік» збігається з профілем, «2 роки» — межа, яку пишуть про запас."""
+    for text in ("1+ рік комерційного досвіду", "2 роки досвіду",
+                 "Досвід DS/MLE від 1 року"):
+        concerns = screen(text, "Python Developer").concerns
+        assert not any("років досвіду" in c for c in concerns), text
