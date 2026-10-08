@@ -28,14 +28,15 @@ from datetime import date
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from sqlalchemy import select
 
-from app.alerts import (Alert, ApplicationBrief, VacancyBrief,
-                        silence_alerts, unsent, vacancy_alerts)
+from app.alerts import (ApplicationBrief, VacancyBrief, digest_keyboard,
+                        digest_text, silence_alerts, unsent)
 from app.bot_actions import poll
 from app.collect import collect
 from app.dedup import Publication, find_reposts
 from app.db import get_sessionmaker
 from app.models import Application, SourceConfig, Vacancy
-from app.notify import NotConfigured, already_sent, deliver
+from app.notify import (NotConfigured, already_sent, deliver,
+                        deliver_digest)
 from app.screen import assess
 from app.screening import screen
 
@@ -105,40 +106,30 @@ async def announce_new(session) -> None:
             matched=tuple(content.matched), gaps=tuple(content.gaps),
         ))
 
-    alerts = unsent(vacancy_alerts(briefs), await already_sent(session))
-    if not alerts:
+    fresh = [b for b in briefs
+             if b.state == "ok" and b.fit in {"strong", "possible"}
+             and f"vacancy:{b.id}" not in await already_sent(session)]
+    if not fresh:
         return
 
-    # Зведення попереду переліку: воно відповідає на питання «скільки з
-    # того, що зібрано, взагалі варте уваги», якого окремі картки не
-    # закривають. Ключ несе дату — зведення за різні дні різні за змістом,
-    # на відміну від картки вакансії, яка назавжди та сама.
-    fit = sum(1 for b in briefs if b.state == "ok"
-              and b.fit in {"strong", "possible"})
-    summary = Alert(
-        key=f"digest:{date.today():%Y-%m-%d}:{len(alerts)}",
-        text=(f"<b>Нових вакансій: {len(alerts)}</b>\n"
-              f"Усього в переліку {len(briefs)}, придатних {fit}, "
-              f"подано на {len(applied)}."),
-    )
-    alerts = unsent([summary], await already_sent(session)) + alerts
+    # Одне повідомлення замість шести: шість сповіщень на телефоні гортають
+    # не читаючи вже з третього. Кнопки лишаються по рядку на вакансію, тож
+    # дія нікуди не зникає.
+    fresh.sort(key=lambda b: (b.replies if b.replies is not None else 10 ** 6))
+    text = digest_text(fresh, total=len(briefs), applied=len(applied))
+    keyboard = digest_keyboard(fresh)
+    keys = [f"vacancy:{b.id}" for b in fresh]
 
-    try:
-        sent, failed = await deliver(session, alerts)
-        log.info("сповіщень надіслано %d, не вдалося %d", sent, failed)
-    except NotConfigured as exc:
-        # Не налаштований бот — стан, а не помилка. Але ГУЧНИЙ: інакше
-        # «немає про що повідомляти» і «нема куди повідомляти» виглядали б
-        # однаково, і це та сама пара, через яку збирач мовчав три години.
-        log.warning("сповіщення не надіслані: %s", exc)
+    ok = await deliver_digest(session, text, keyboard, keys)
+    log.info("зведення з %d вакансій %s", len(fresh),
+             "надіслано" if ok else "НЕ надіслано")
 
 
 async def poll_actions() -> None:
     """Забрати натискання кнопок.
 
-    Кожні дві хвилини: це компроміс між «дія спрацювала одразу» і кількістю
-    запитів. Telegram зберігає оновлення добу, тож навіть довгий простій
-    машини нічого не губить.
+    Кожні пів хвилини. Telegram зберігає оновлення добу, тож навіть довгий
+    простій машини нічого не губить.
     """
     async with get_sessionmaker()() as session:
         handled = await poll(session)
@@ -174,8 +165,11 @@ def build(today: date | None = None) -> AsyncIOScheduler:
     scheduler = AsyncIOScheduler(timezone="Europe/Kyiv")
     scheduler.add_job(collect_all, "interval", hours=1, id="collect",
                       coalesce=True, max_instances=1, misfire_grace_time=600)
-    scheduler.add_job(poll_actions, "interval", minutes=2, id="actions",
-                      coalesce=True, max_instances=1, misfire_grace_time=120)
+    # Пів хвилини, а не дві: дія має відчуватись миттєвою. Запит дешевий —
+    # getUpdates без очікування повертається одразу, і коли натискань немає,
+    # це порожня відповідь.
+    scheduler.add_job(poll_actions, "interval", seconds=30, id="actions",
+                      coalesce=True, max_instances=1, misfire_grace_time=60)
     scheduler.add_job(remind_silence, "cron", hour=9, minute=30, id="silence",
                       coalesce=True, max_instances=1, misfire_grace_time=3600)
     return scheduler

@@ -124,3 +124,43 @@ async def deliver(session: AsyncSession, alerts: list[Alert]) -> tuple[int, int]
             row.error, failed = _safe(exc), failed + 1
     await session.commit()
     return sent, failed
+
+
+async def deliver_digest(session: AsyncSession, text: str, keyboard: dict,
+                         keys: list[str]) -> bool:
+    """Надіслати ОДНЕ повідомлення, погасивши повтор для всіх вакансій у ньому.
+
+    Ключі гасіння лишаються по вакансіях, а не по повідомленню: інакше та
+    сама вакансія приїхала б у наступному зведенні знову. Записуються ДО
+    відправки — збій посеред доставки не повинен давати повторів, бо
+    щогодинне повторення того самого переліку гірше за одне втрачене
+    повідомлення.
+    """
+    from app.models import Notification
+
+    for key in keys:
+        session.add(Notification(key=key, text=text[:4000]))
+    await session.flush()
+
+    try:
+        cfg = get_settings()
+        if not cfg.telegram_chat_id:
+            raise NotConfigured("TELEGRAM_CHAT_ID не заданий у .env")
+        await call("sendMessage", {
+            "chat_id": cfg.telegram_chat_id, "text": text, "parse_mode": "HTML",
+            "disable_web_page_preview": True, "reply_markup": keyboard,
+        })
+        for row in (await session.execute(
+            select(Notification).where(Notification.key.in_(keys))
+        )).scalars():
+            row.delivered = True
+        ok = True
+    except Exception as exc:                      # noqa: BLE001
+        for row in (await session.execute(
+            select(Notification).where(Notification.key.in_(keys))
+        )).scalars():
+            row.error = _safe(exc)
+        ok = False
+
+    await session.commit()
+    return ok

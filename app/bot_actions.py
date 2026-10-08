@@ -26,7 +26,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import Application, ApplicationEvent, BotState, Channel, Status, Vacancy
-from app.notify import NotConfigured, call
+from app.config import get_settings
+from app.notify import NotConfigured, _safe, call
 
 log = logging.getLogger("jobtrack.bot")
 
@@ -70,6 +71,49 @@ async def _apply(session: AsyncSession, action: str, vacancy_id: int) -> str:
     return f"✅ записано: {vacancy.company} — {vacancy.title[:40]}"
 
 
+def _is_owner(query: dict) -> bool:
+    """Чи натиснув кнопку власник системи.
+
+    Перевірка потрібна, бо повідомлення з inline-кнопками МОЖНА переслати в
+    інший чат, і кнопки лишаться робочими: натискання прийде нам від того,
+    хто натиснув, а не від того, кому ми писали. Без звірки будь-хто, до
+    кого дійшло переслане повідомлення, створював би подачі в чужому журналі
+    і ховав чужі вакансії.
+
+    Звіряємо і відправника, і чат: перше захищає від пересилання, друге —
+    від додавання бота в групу.
+    """
+    allowed = str(get_settings().telegram_chat_id)
+    if not allowed:
+        return False
+    sender = str((query.get("from") or {}).get("id", ""))
+    chat = str(((query.get("message") or {}).get("chat") or {}).get("id", ""))
+    return allowed in {sender, chat}
+
+
+def _mark_row(keyboard: list[list[dict]], payload: str, answer: str) -> dict:
+    """Позначити рядок, по якому натиснули, лишивши решту робочими.
+
+    У зведенні рядок на вакансію, і дія стосується ОДНІЄЇ з них. Замінити
+    всю клавіатуру одним підтвердженням означало б відібрати можливість
+    відреагувати на решту — а саме заради цього зведення й існує.
+    """
+    _, _, vacancy_id = payload.partition(":")
+    rows: list[list[dict]] = []
+    for row in keyboard:
+        mine = any(str(b.get("callback_data", "")).endswith(f":{vacancy_id}")
+                   for b in row)
+        if mine:
+            # Номер позиції беремо з підпису кнопки, щоб позначка лишалась
+            # прив'язаною до рядка в тексті.
+            number = (row[0].get("text", "") or "").split(" ")[0]
+            rows.append([{"text": f"{number} {answer[:48]}",
+                          "callback_data": "done"}])
+        else:
+            rows.append(row)
+    return {"inline_keyboard": rows}
+
+
 async def poll(session: AsyncSession) -> int:
     """Забрати натискання й виконати їх. Повертає кількість опрацьованих."""
     state = await _offset(session)
@@ -79,6 +123,12 @@ async def poll(session: AsyncSession) -> int:
                                          "allowed_updates": ["callback_query"]})
     except NotConfigured:
         return 0
+    except Exception as exc:                      # noqa: BLE001
+        # Виняток від httpx несе повну адресу запиту, а в ній — токен бота.
+        # Піднявши його вище, ми віддали б секрет у лог APScheduler разом із
+        # трасуванням. Тому гасимо тут і пишемо вже знешкоджений текст.
+        log.warning("опитування телеграму не вдалось: %s", _safe(exc))
+        return 0
 
     handled = 0
     for update in data.get("result", []):
@@ -87,20 +137,52 @@ async def poll(session: AsyncSession) -> int:
         if not query:
             continue
 
+        if not _is_owner(query):
+            # Чуже натискання не виконуємо і не відповідаємо на нього:
+            # мовчання не підказує, що бот узагалі щось уміє.
+            log.warning("натискання від стороннього — проігноровано")
+            continue
+
         payload = query.get("data", "")
         action, _, raw_id = payload.partition(":")
+        if action == "done":
+            continue                              # натиснуто позначку, не дію
         if action not in {"applied", "skip"} or not raw_id.isdigit():
             continue
 
         answer = await _apply(session, action, int(raw_id))
         handled += 1
-        # Відповідь спливає над кнопкою: дія без підтвердження виглядає як
-        # дія, що не спрацювала.
+
+        # Підтвердження замінює кнопки В САМОМУ повідомленні, а не спливає
+        # над ним. Так вирішено після першої ж перевірки 08.10.2026:
+        # `answerCallbackQuery` вимагає відповіді протягом ~15 секунд, а
+        # опитування йде з інтервалом — тож спливаюче підтвердження майже
+        # завжди запізнюється, і дія виглядає як така, що не спрацювала.
+        #
+        # Позначка в повідомленні ще й корисніша: вона лишається в історії
+        # каналу, тож видно, на що вже відреаговано, навіть через тиждень.
+        message = query.get("message") or {}
+        if message.get("message_id"):
+            try:
+                await call("editMessageReplyMarkup", {
+                    "chat_id": message["chat"]["id"],
+                    "message_id": message["message_id"],
+                    "reply_markup": _mark_row(
+                        (message.get("reply_markup") or {}).get("inline_keyboard", []),
+                        payload, answer),
+                })
+            except Exception as exc:              # noqa: BLE001
+                log.warning("не вдалось позначити повідомлення: %s", _safe(exc))
+
+        # Спливаюче підтвердження лишається спробою: коли натискання
+        # опрацьовується швидко, воно приємніше за редагування.
         try:
             await call("answerCallbackQuery",
                        {"callback_query_id": query["id"], "text": answer})
-        except Exception as exc:                  # noqa: BLE001
-            log.warning("не вдалось відповісти на натискання: %s", type(exc).__name__)
+        except Exception:                         # noqa: BLE001
+            # Прострочений ідентифікатор — звичайний стан при опитуванні,
+            # а не поломка: позначку вже поставлено вище.
+            pass
         log.info("дія з телеграму: %s → %s", payload, answer)
 
     await session.commit()

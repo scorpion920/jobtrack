@@ -38,3 +38,58 @@ def test_callback_payload_is_parsed_strictly():
                 "applied:1;drop", "skip:-1"):
         action, _, raw = bad.partition(":")
         assert not (action in {"applied", "skip"} and raw.isdigit()), bad
+
+
+def test_only_the_pressed_row_is_marked():
+    """У зведенні рядок на вакансію, і дія стосується однієї з них.
+
+    Замінити всю клавіатуру одним підтвердженням означало б відібрати
+    можливість відреагувати на решту — а саме заради цього зведення й існує.
+    """
+    from app.bot_actions import _mark_row
+
+    keyboard = [
+        [{"text": "1 ✅ подав", "callback_data": "applied:10"},
+         {"text": "1 🚫 нецікаво", "callback_data": "skip:10"}],
+        [{"text": "2 ✅ подав", "callback_data": "applied:20"},
+         {"text": "2 🚫 нецікаво", "callback_data": "skip:20"}],
+    ]
+    result = _mark_row(keyboard, "skip:10", "🚫 приховано: Acme")["inline_keyboard"]
+
+    assert len(result[0]) == 1 and result[0][0]["callback_data"] == "done"
+    assert result[0][0]["text"].startswith("1 ")      # номер позиції зберігся
+    assert result[1] == keyboard[1]                   # друга лишилась робочою
+
+
+def test_stranger_cannot_act():
+    """Повідомлення з кнопками МОЖНА переслати в інший чат, і кнопки
+    лишаться робочими: натискання прийде від того, хто натиснув.
+
+    Без звірки будь-хто, до кого дійшло переслане повідомлення, створював
+    би подачі в чужому журналі і ховав чужі вакансії.
+    """
+    from app.bot_actions import _is_owner
+
+    assert not _is_owner({"from": {"id": 999999999},
+                          "message": {"chat": {"id": 888888}}})
+    assert not _is_owner({})
+    assert not _is_owner({"from": {}})
+
+
+def test_digest_numbers_match_the_keyboard():
+    """Номер у підписі кнопки мусить збігатися з номером у тексті —
+    інакше при шести однакових рядках неможливо зрозуміти, яка до чого."""
+    from datetime import date
+
+    from app.alerts import VacancyBrief, digest_keyboard, digest_text
+
+    items = [VacancyBrief(i, f"https://x/{i}", f"Company{i}", "Dev", "djinni",
+                          "ok", "strong", i, date(2026, 10, 8))
+             for i in (1, 2, 3)]
+    text = digest_text(items, total=10, applied=2)
+    keyboard = digest_keyboard(items)["inline_keyboard"]
+
+    assert len(keyboard) == 3
+    for n, row in enumerate(keyboard, start=1):
+        assert row[0]["text"].startswith(f"{n} ")
+        assert f"{n}. " in text

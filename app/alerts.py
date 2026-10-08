@@ -199,3 +199,61 @@ def unsent(alerts: list[Alert], already: set[str]) -> list[Alert]:
     саме тут найлегше помилитись і слати те саме щодня.
     """
     return [a for a in alerts if a.key not in already]
+
+
+#  ─────────────────────────── зведене повідомлення ───────────────────────────
+#
+#  Шість окремих карток за один прогін — шість сповіщень на телефоні, і з
+#  третього їх гортають не читаючи. Зведення дає ту саму інформацію одним
+#  дотиком уваги, а кнопки лишаються по рядку на вакансію, тож дія нікуди
+#  не зникає.
+
+def digest_text(items: list[VacancyBrief], total: int, applied: int) -> str:
+    """Список вакансій одним повідомленням.
+
+    Кожна позиція коротша за окрему картку: без неї не обійтися при шести
+    вакансіях у телефоні. Лишилось те, без чого рішення не ухвалити —
+    сила збігу, умови, конкуренція і три головні збіги.
+    """
+    head = (f"<b>Нових вакансій: {len(items)}</b>\n"
+            f"Усього в переліку {total}, подано на {applied}.")
+    blocks = [head]
+
+    for n, v in enumerate(items, start=1):
+        terms = []
+        if v.format:
+            terms.append({"remote": "віддалено", "office": "офіс",
+                          "hybrid": "гібрид"}.get(v.format, esc(v.format)))
+        if v.years_required is not None:
+            terms.append(f"{v.years_required} р.")
+        if v.english:
+            terms.append(_ENGLISH_NOT_NEEDED if v.english == "none"
+                         else esc(v.english.upper()))
+        terms.append(f"{v.replies} відгуків" if v.replies is not None
+                     else "відгуки не видно")
+
+        line = (f"\n<b>{n}. {_MARK.get(v.fit, '•')} {esc(v.company)}</b> — "
+                f"{esc(v.title)}\n{' · '.join(terms)}")
+        if v.matched:
+            shown = ", ".join(esc(m) for m in v.matched[:3])
+            more = len(v.matched) - 3
+            line += f"\n{shown}" + (f" +{more}" if more > 0 else "")
+        line += f"\n{esc(v.url)}"
+        blocks.append(line)
+
+    return "\n".join(blocks)
+
+
+def digest_keyboard(items: list[VacancyBrief]) -> dict:
+    """Клавіатура: рядок на вакансію, номер збігається з номером у тексті.
+
+    Номер у підписі обов'язковий — без нього при шести рядках однакових
+    кнопок неможливо зрозуміти, яка до чого.
+    """
+    rows = []
+    for n, v in enumerate(items, start=1):
+        rows.append([
+            {"text": f"{n} ✅ подав", "callback_data": f"applied:{v.id}"},
+            {"text": f"{n} 🚫 нецікаво", "callback_data": f"skip:{v.id}"},
+        ])
+    return {"inline_keyboard": rows}
