@@ -26,6 +26,7 @@ from app.api.sync import router as sync_router
 from app.api.vacancies import router as vacancies_router
 from app.collect import collect
 from app.screen import Candidate, assess, find_alternative
+from app.screening import screen as screen_text
 from app.config import get_settings
 from app.db import get_session
 from app.funnel import build as build_funnel
@@ -195,11 +196,15 @@ async def vacancies(request: Request, message: str | None = None,
     for v in rows:
         verdict = assess(format=v.format, years_required=v.years_required,
                          english=v.english, location=v.location)
+        content = screen_text(v.raw_text)
         view.append(SimpleNamespace(**{c.name: getattr(v, c.name)
                                        for c in Vacancy.__table__.columns},
                                     blocked=verdict.blocked, reason=verdict.reason,
                                     state=verdict.state,
-                                    unchecked=", ".join(verdict.unchecked)))
+                                    unchecked=", ".join(verdict.unchecked),
+                                    fit=content.fit,
+                                    matched=content.matched,
+                                    concerns=content.concerns))
 
     # Той самий варіант посади в доступному вигляді, якщо він є.
     pool = [Candidate(url=v.url, company_norm=v.company_norm,
@@ -207,6 +212,14 @@ async def vacancies(request: Request, message: str | None = None,
             for v in view]
     for v, me in zip(view, pool):
         v.alternative = find_alternative(me, pool)
+
+    # Порядок показу = порядок, у якому їх варто читати: спершу доступні зі
+    # змістовним збігом, далі за зростанням конкуренції. Свіжість сама собою
+    # нічого не варта, якщо на вакансію вже 300 відгуків.
+    _FIT = {"strong": 0, "possible": 1, "weak": 2}
+    _STATE = {"ok": 0, "unchecked": 1, "blocked": 2}
+    view.sort(key=lambda v: (_STATE[v.state], _FIT[v.fit],
+                             v.replies if v.replies is not None else 10 ** 6))
 
     last = max((s.last_run_at for s in sources if s.last_run_at), default=None)
     return templates.TemplateResponse(request, "vacancies.html", {
