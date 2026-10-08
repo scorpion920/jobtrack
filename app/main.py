@@ -234,7 +234,8 @@ async def vacancies(request: Request, message: str | None = None,
     вже відсутній у тої, яка висить третій тиждень із трьома сотнями відгуків.
     """
     rows = list((await session.execute(
-        select(Vacancy).order_by(Vacancy.posted_at.desc().nullslast())
+        select(Vacancy).where(Vacancy.dismissed.is_(False))
+                       .order_by(Vacancy.posted_at.desc().nullslast())
     )).scalars())
     sources = list((await session.execute(
         select(SourceConfig).order_by(SourceConfig.key)

@@ -30,6 +30,7 @@ from sqlalchemy import select
 
 from app.alerts import (Alert, ApplicationBrief, VacancyBrief,
                         silence_alerts, unsent, vacancy_alerts)
+from app.bot_actions import poll
 from app.collect import collect
 from app.dedup import Publication, find_reposts
 from app.db import get_sessionmaker
@@ -89,7 +90,7 @@ async def announce_new(session) -> None:
 
     briefs = []
     for v in vacancies:
-        if v.id in applied or v.url in reposts:
+        if v.id in applied or v.url in reposts or v.dismissed:
             continue
         verdict = assess(format=v.format, years_required=v.years_required,
                          english=v.english, location=v.location)
@@ -132,6 +133,19 @@ async def announce_new(session) -> None:
         log.warning("сповіщення не надіслані: %s", exc)
 
 
+async def poll_actions() -> None:
+    """Забрати натискання кнопок.
+
+    Кожні дві хвилини: це компроміс між «дія спрацювала одразу» і кількістю
+    запитів. Telegram зберігає оновлення добу, тож навіть довгий простій
+    машини нічого не губить.
+    """
+    async with get_sessionmaker()() as session:
+        handled = await poll(session)
+        if handled:
+            log.info("опрацьовано дій з телеграму: %d", handled)
+
+
 async def remind_silence() -> None:
     """Нагадати про подачі, які мовчать довше за норму."""
     async with get_sessionmaker()() as session:
@@ -160,6 +174,8 @@ def build(today: date | None = None) -> AsyncIOScheduler:
     scheduler = AsyncIOScheduler(timezone="Europe/Kyiv")
     scheduler.add_job(collect_all, "interval", hours=1, id="collect",
                       coalesce=True, max_instances=1, misfire_grace_time=600)
+    scheduler.add_job(poll_actions, "interval", minutes=2, id="actions",
+                      coalesce=True, max_instances=1, misfire_grace_time=120)
     scheduler.add_job(remind_silence, "cron", hour=9, minute=30, id="silence",
                       coalesce=True, max_instances=1, misfire_grace_time=3600)
     return scheduler

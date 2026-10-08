@@ -22,7 +22,7 @@ from app.alerts import Alert
 from app.config import get_settings
 from app.models import Notification
 
-API = "https://api.telegram.org/bot{token}/sendMessage"
+API = "https://api.telegram.org/bot{token}/{method}"
 
 
 def _safe(exc: Exception) -> str:
@@ -46,19 +46,52 @@ class NotConfigured(RuntimeError):
     """Бот не налаштований. Це стан, а не помилка — але ГУЧНИЙ стан."""
 
 
-async def send(text: str) -> None:
+async def call(method: str, payload: dict) -> dict:
+    """Виклик Bot API. Єдине місце, що знає про токен."""
     cfg = get_settings()
-    if not cfg.telegram_bot_token or not cfg.telegram_chat_id:
-        raise NotConfigured(
-            "TELEGRAM_BOT_TOKEN або TELEGRAM_CHAT_ID не задані у .env")
+    if not cfg.telegram_bot_token:
+        raise NotConfigured("TELEGRAM_BOT_TOKEN не заданий у .env")
 
-    async with httpx.AsyncClient(timeout=20.0) as client:
+    async with httpx.AsyncClient(timeout=30.0) as client:
         response = await client.post(
-            API.format(token=cfg.telegram_bot_token),
-            json={"chat_id": cfg.telegram_chat_id, "text": text,
-                  "parse_mode": "HTML", "disable_web_page_preview": False},
-        )
+            API.format(token=cfg.telegram_bot_token, method=method), json=payload)
         response.raise_for_status()
+        return response.json()
+
+
+def _buttons(key: str) -> dict | None:
+    """Кнопки дій під карткою вакансії.
+
+    Чому кнопки, попри те, що бот свідомо односторонній. Команди в боті
+    означали б другий інтерфейс до тих самих даних — і це рішення лишається.
+    Кнопка ж не є інтерфейсом: вона діє над КОНКРЕТНИМ повідомленням, яке
+    бот щойно надіслав, і не вимагає нічого пам'ятати.
+
+    Цінність саме в «не цікавить»: кожна відмова оператора ставала правилом
+    скринера (no-code, академічна математика, DevOps, Oracle, гібрид —
+    усі п'ять прийшли так за один вечір). Зараз це коштує окремої розмови;
+    кнопка робить це дотиком.
+    """
+    if not key.startswith("vacancy:"):
+        return None
+    vacancy_id = key.split(":", 1)[1]
+    return {"inline_keyboard": [[
+        {"text": "✅ Подав", "callback_data": f"applied:{vacancy_id}"},
+        {"text": "🚫 Не цікавить", "callback_data": f"skip:{vacancy_id}"},
+    ]]}
+
+
+async def send(text: str, key: str = "") -> None:
+    cfg = get_settings()
+    if not cfg.telegram_chat_id:
+        raise NotConfigured("TELEGRAM_CHAT_ID не заданий у .env")
+
+    payload = {"chat_id": cfg.telegram_chat_id, "text": text,
+               "parse_mode": "HTML", "disable_web_page_preview": True}
+    markup = _buttons(key)
+    if markup:
+        payload["reply_markup"] = markup
+    await call("sendMessage", payload)
 
 
 async def already_sent(session: AsyncSession) -> set[str]:
@@ -85,7 +118,7 @@ async def deliver(session: AsyncSession, alerts: list[Alert]) -> tuple[int, int]
         session.add(row)
         await session.flush()
         try:
-            await send(alert.text)
+            await send(alert.text, alert.key)
             row.delivered, sent = True, sent + 1
         except Exception as exc:                      # noqa: BLE001
             row.error, failed = _safe(exc), failed + 1

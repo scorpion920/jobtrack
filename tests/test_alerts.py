@@ -181,3 +181,23 @@ def test_missing_fields_do_not_break_the_message():
                        location=None, replies=None, matched=(), gaps=()))
     assert "відгуки не видно" in text
     assert "Збіг:" not in text
+
+
+def test_every_external_field_is_escaped():
+    """Жодне поле, що прийшло ззовні, не є винятком.
+
+    Перевірено 08.10.2026: тлумач ознак пропускає розмітку наскрізь —
+    «Англійська - <b>X</b>» дає english='<b>x</b>'. Перша редакція
+    `describe()` екранувала назву компанії й посаду, але не формат,
+    англійську та адресу.
+    """
+    from app.alerts import describe
+
+    text = describe(_v(company="<i>C</i>", title="<i>T</i>",
+                       format="<i>F</i>", english="<i>e</i>",
+                       location="<i>L</i>", source_key="<i>S</i>",
+                       url="https://x/?a=<i>u</i>",
+                       matched=("<i>M</i>",), gaps=("<i>G</i>",)))
+    # Жодного чужого тега не лишилось — тільки наші <b>.
+    assert "<i>" not in text
+    assert text.count("&lt;i&gt;") == 8

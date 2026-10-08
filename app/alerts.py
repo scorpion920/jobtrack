@@ -130,13 +130,17 @@ def describe(v: VacancyBrief) -> str:
 
     terms: list[str] = []
     if v.format:
-        terms.append({"remote": "віддалено", "office": "офіс",
-                      "hybrid": "гібрид"}.get(v.format, v.format))
+        # Екрануємо і тут: невідомий формат підставляється як є, а значення
+        # походить із тексту майданчика. Перевірено 08.10.2026 — тлумач ознак
+        # пропускає розмітку наскрізь: «Англійська - <b>X</b>» дає
+        # english='<b>x</b>'. Жодне поле, що прийшло ззовні, не є винятком.
+        terms.append(esc({"remote": "віддалено", "office": "офіс",
+                          "hybrid": "гібрид"}.get(v.format, v.format)))
     if v.years_required is not None:
         terms.append(f"{v.years_required} р. досвіду")
     if v.english:
         terms.append("англ. " + (_ENGLISH_NOT_NEEDED if v.english == "none"
-                                 else v.english.upper()))
+                                 else esc(v.english.upper())))
     if v.location:
         terms.append(esc(v.location))
 
@@ -162,7 +166,7 @@ def describe(v: VacancyBrief) -> str:
         # доведеться називати в супровідному листі.
         lines.append(f"<b>Бракує:</b> {esc(v.gaps[0])}")
 
-    lines.append(f"\n{v.url}")
+    lines.append(f"\n{esc(v.url)}")
     return "\n".join(lines)
 
 

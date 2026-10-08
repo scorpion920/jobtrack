@@ -336,6 +336,11 @@ class Vacancy(Base):
 
     raw_text: Mapped[str] = mapped_column(Text, default="")
 
+    # Оператор сказав «не цікавить». Вакансія лишається в базі — відмова
+    # сама по собі є даними: саме з таких відмов за один вечір народилось
+    # п'ять правил скринера. Але в переліку й сповіщеннях її більше немає.
+    dismissed: Mapped[bool] = mapped_column(Boolean, default=False)
+
     first_seen: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     last_seen: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
@@ -395,3 +400,22 @@ class Notification(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     __table_args__ = (Index("ix_notification_created", "created_at"),)
+
+
+class BotState(Base):
+    """Стан опитування Telegram — один рядок.
+
+    Зберігає `offset`: номер останнього опрацьованого оновлення. Без нього
+    кожне опитування повертало б ті самі натискання, і «не цікавить»
+    спрацьовувало б знову й знову.
+
+    Окрема таблиця, а не файл, бо це стан, який мусить пережити перезапуск
+    контейнера нарівні з рештою даних.
+    """
+
+    __tablename__ = "bot_state"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    update_offset: Mapped[int] = mapped_column(Integer, default=0)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
