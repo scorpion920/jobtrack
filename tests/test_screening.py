@@ -115,3 +115,46 @@ def test_python_vacancy_keeps_its_fit():
                ETL пайплайни, інтеграції з API.""")
     assert m.fit == "strong"
     assert not m.concerns
+
+
+def test_devops_is_recognised_by_the_job_title_not_the_tools():
+    """KaaIoT «Junior SRE / DevOps Engineer» отримував strong із шістьма
+    збігами — Python, Docker, Linux, PostgreSQL, моніторинг, asyncio.
+
+    Усі шість справжні, і все одно це не та робота: власник пише код, а не
+    супроводжує чужий. Сигнал мусить читатися з НАЗВИ, бо «Docker» і «CI/CD»
+    згадує половина вакансій розробника.
+    """
+    tools = """Python scripting, Docker, Linux, PostgreSQL, Grafana,
+    Prometheus, моніторинг, asyncio, CI/CD pipelines"""
+    assert screen(tools, "Junior SRE / DevOps Engineer").fit == "weak"
+    assert "DevOps/SRE, а не розробка" in screen(tools, "Junior SRE / DevOps Engineer").concerns
+    # Той самий текст під назвою розробника — придатний.
+    assert screen(tools, "Python Developer").fit == "strong"
+
+
+def test_devops_tools_in_a_developer_vacancy_are_not_a_stop():
+    """Розробник теж користується Docker і CI/CD — це інструмент, не професія."""
+    m = screen("Python, FastAPI, Docker, CI/CD, Kubernetes, моніторинг",
+               "Backend Python Developer")
+    assert not any("DevOps" in c for c in m.concerns)
+
+
+def test_other_professions_are_recognised_by_title():
+    tools = "Python, SQL, Docker, PostgreSQL, REST API"
+    cases = {
+        "QA Automation Engineer": "тестування",
+        "Technical Support Specialist": "підтримка",
+        "Product Manager": "менеджмент",
+        "Motion Designer": "дизайн",
+        "Talent Sourcer": "рекрутинг",
+        "Media Buyer": "продажі",
+    }
+    for title, expected in cases.items():
+        concerns = " ".join(screen(tools, title).concerns)
+        assert expected in concerns, f"{title}: {concerns}"
+
+
+def test_title_is_optional():
+    """Без назви модуль працює як раніше — канал може її не дати."""
+    assert screen("Python, FastAPI, PostgreSQL, Docker, Celery, ETL").fit == "strong"

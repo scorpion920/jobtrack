@@ -196,7 +196,7 @@ async def vacancies(request: Request, message: str | None = None,
     for v in rows:
         verdict = assess(format=v.format, years_required=v.years_required,
                          english=v.english, location=v.location)
-        content = screen_text(v.raw_text)
+        content = screen_text(v.raw_text, v.title)
         view.append(SimpleNamespace(**{c.name: getattr(v, c.name)
                                        for c in Vacancy.__table__.columns},
                                     blocked=verdict.blocked, reason=verdict.reason,

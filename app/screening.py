@@ -110,6 +110,31 @@ STOP_PATTERNS: tuple[tuple[str, str], ...] = (
 )
 
 
+#  ЧИМ ЦЕ НЕ Є — сигнали, які читаються з НАЗВИ ПОСАДИ, а не з тексту.
+#
+#  Розділення принципове. «Docker», «CI/CD», «моніторинг» згадує половина
+#  вакансій розробника, і шукати за ними в тексті означає плутати інструмент
+#  із професією. Назва посади ж називає професію прямо.
+#
+#  Знайдено 08.10.2026: KaaIoT «Junior SRE / DevOps Engineer» отримав strong
+#  із шістьма збігами (Python, Docker, Linux, PostgreSQL, моніторинг,
+#  asyncio) — усі справжні, і все одно це не та робота. Власник пише код,
+#  а не супроводжує чужий.
+TITLE_STOP_PATTERNS: tuple[tuple[str, str], ...] = (
+    (r"devops|\bsre\b|site reliability|infrastructure engineer|системний адмін|sysadmin",
+     "DevOps/SRE, а не розробка"),
+    (r"\bqa\b|test automation|автоматизац\w* тестуван|тестувальник|quality assurance",
+     "тестування, а не розробка"),
+    (r"support|helpdesk|технічн\w* підтримк|service desk",
+     "підтримка, а не розробка"),
+    (r"project manager|product manager|scrum|product owner|бізнес.?аналітик",
+     "менеджмент, а не розробка"),
+    (r"designer|дизайнер|motion|ux|ui\b", "дизайн"),
+    (r"recruiter|sourcer|рекрутер|talent", "рекрутинг"),
+    (r"sales|media buyer|маркетолог|smm|affiliate", "продажі/маркетинг"),
+)
+
+
 @dataclass
 class Match:
     """Оцінка змістовної відповідності."""
@@ -137,10 +162,19 @@ class Match:
         return "possible" if len(self.matched) >= 2 else "weak"
 
 
-def screen(text: str) -> Match:
-    """Оцінити вакансію за її текстом."""
+def screen(text: str, title: str | None = None) -> Match:
+    """Оцінити вакансію за її текстом і назвою посади.
+
+    `title` окремим параметром навмисно: частина сигналів має сенс лише в
+    назві. Професія названа в заголовку, а в тексті лежать інструменти —
+    і вони в розробника й у DevOps-інженера значною мірою ті самі.
+    """
     low = (text or "").lower()
     result = Match()
+
+    for pattern, why in TITLE_STOP_PATTERNS:
+        if re.search(pattern, (title or "").lower(), re.I):
+            result.concerns.append(why)
 
     for name, variants in HAVE.items():
         if any(v in low for v in variants):
