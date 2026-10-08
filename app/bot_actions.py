@@ -80,15 +80,31 @@ def _is_owner(query: dict) -> bool:
     кого дійшло переслане повідомлення, створював би подачі в чужому журналі
     і ховав чужі вакансії.
 
-    Звіряємо і відправника, і чат: перше захищає від пересилання, друге —
-    від додавання бота в групу.
+    Умова СУВОРА: власником має бути саме відправник натискання, а чат —
+    або наш, або не вказаний узагалі.
+
+    Перша редакція перевіряла `allowed in {sender, chat}`, тобто «або-або», і
+    цього не досить: збігу самого лише чату достатньо, щоб дію виконав
+    хтось інший. Найпростіший випадок — бот, доданий у групу, де
+    натискає будь-хто з учасників, а `message.chat.id` для бота виглядає
+    знайомим. Авторизація, яку можна задовольнити ПОЛОВИНОЮ умови, не є
+    авторизацією.
     """
-    allowed = str(get_settings().telegram_chat_id)
+    allowed = str(get_settings().telegram_chat_id or "").strip()
     if not allowed:
+        # Не налаштовано — не дозволено нікому. Порожнє значення не може
+        # означати «пускати всіх»: це рівно та помилка, через яку системи
+        # відкриваються назовні при неповному налаштуванні.
         return False
-    sender = str((query.get("from") or {}).get("id", ""))
-    chat = str(((query.get("message") or {}).get("chat") or {}).get("id", ""))
-    return allowed in {sender, chat}
+
+    sender = str((query.get("from") or {}).get("id", "")).strip()
+    if sender != allowed:
+        return False
+
+    chat = str(((query.get("message") or {}).get("chat") or {}).get("id", "")).strip()
+    # Чат відсутній у callback з inline-режиму — там перевіряти нема чого,
+    # і відправника вже звірено. Але якщо чат названий, він мусить бути наш.
+    return not chat or chat == allowed
 
 
 def _mark_row(keyboard: list[list[dict]], payload: str, answer: str) -> dict:

@@ -28,15 +28,14 @@ from datetime import date
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from sqlalchemy import select
 
-from app.alerts import (ApplicationBrief, VacancyBrief, digest_keyboard,
-                        digest_text, silence_alerts, unsent)
+from app.alerts import (Alert, ApplicationBrief, VacancyBrief, describe,
+                        silence_alerts, unsent)
 from app.bot_actions import poll
 from app.collect import collect
 from app.dedup import Publication, find_reposts
 from app.db import get_sessionmaker
 from app.models import Application, SourceConfig, Vacancy
-from app.notify import (NotConfigured, already_sent, deliver,
-                        deliver_digest)
+from app.notify import NotConfigured, already_sent, deliver
 from app.screen import assess
 from app.screening import screen
 
@@ -112,17 +111,28 @@ async def announce_new(session) -> None:
     if not fresh:
         return
 
-    # Одне повідомлення замість шести: шість сповіщень на телефоні гортають
-    # не читаючи вже з третього. Кнопки лишаються по рядку на вакансію, тож
-    # дія нікуди не зникає.
+    # Найменш заповнені першими: саме там вирішують години.
     fresh.sort(key=lambda b: (b.replies if b.replies is not None else 10 ** 6))
-    text = digest_text(fresh, total=len(briefs), applied=len(applied))
-    keyboard = digest_keyboard(fresh)
-    keys = [f"vacancy:{b.id}" for b in fresh]
 
-    ok = await deliver_digest(session, text, keyboard, keys)
-    log.info("зведення з %d вакансій %s", len(fresh),
-             "надіслано" if ok else "НЕ надіслано")
+    # Зведення одним рядком попереду — щоб масштаб був видний до того, як
+    # починаєш читати окремі вакансії.
+    summary = Alert(
+        key=f"digest:{date.today():%Y-%m-%d}:{len(fresh)}",
+        text=(f"<b>Нових вакансій: {len(fresh)}</b> · "
+              f"у переліку {len(briefs)} · подано на {len(applied)}"),
+    )
+
+    # Далі — окремі картки. Кнопки Telegram можна ставити лише ПІД
+    # повідомленням, тож «кнопки навпроти кожної вакансії» означають окремі
+    # повідомлення. Щоб їх читали, картка скорочена до чотирьох рядків.
+    alerts = [Alert(key=f"vacancy:{b.id}", text=describe(b)) for b in fresh]
+
+    try:
+        sent, failed = await deliver(
+            session, unsent([summary], await already_sent(session)) + alerts)
+        log.info("сповіщень надіслано %d, не вдалося %d", sent, failed)
+    except NotConfigured as exc:
+        log.warning("сповіщення не надіслані: %s", exc)
 
 
 async def poll_actions() -> None:

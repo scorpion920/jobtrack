@@ -123,8 +123,14 @@ _ENGLISH_NOT_NEEDED = "не потрібна"
 def describe(v: VacancyBrief) -> str:
     """Текст, після якого не треба відкривати сторінку, щоб вирішити.
 
+    Чотири рядки, не більше. Telegram не вміє ставити кнопки між рядками
+    тексту — лише під повідомленням, — тож «кнопки навпроти кожної вакансії»
+    можливі тільки окремими повідомленнями. А окремі повідомлення читають
+    лише доти, доки вони короткі: сім рядків на картку при шести вакансіях
+    гортають не читаючи вже з третьої.
+
     Порядок рядків — за тим, у якому їх читають: спершу що це, далі чи
-    візьмуть, потім наскільки людно, і аж тоді чим цікаво.
+    візьмуть і наскільки людно, потім чим цікаво, і аж тоді посилання.
     """
     head = f"{_MARK.get(v.fit, '•')} <b>{esc(v.company)}</b> — {esc(v.title)}"
 
@@ -146,27 +152,21 @@ def describe(v: VacancyBrief) -> str:
 
     # «Відгуки не видно» і «нуль відгуків» — різні речі, і плутати їх не
     # можна: DOU конкуренції не повідомляє взагалі.
-    competition = (f"{v.replies} відгуків" if v.replies is not None
-                   else "відгуки не видно")
-    source = f"{competition} · {esc(v.source_key)}"
+    # Умови й конкуренція — в одному рядку: разом вони відповідають на те
+    # саме питання «чи варто витрачати час».
+    terms.append(f"{v.replies} відгуків" if v.replies is not None
+                 else "відгуки не видно")
+    terms.append(esc(v.source_key))
     if v.posted_on:
-        source += f" · {v.posted_on.strftime('%d.%m')}"
+        terms.append(v.posted_on.strftime("%d.%m"))
 
-    lines = [head]
-    if terms:
-        lines.append(" · ".join(terms))
-    lines.append(source)
+    lines = [head, " · ".join(terms)]
 
     if v.matched:
-        shown = ", ".join(esc(m) for m in v.matched[:5])
-        more = len(v.matched) - 5
-        lines.append(f"\n<b>Збіг:</b> {shown}" + (f" +{more}" if more > 0 else ""))
-    if v.gaps:
-        # Прогалина подається з заміною, а не голим фактом: саме так її
-        # доведеться називати в супровідному листі.
-        lines.append(f"<b>Бракує:</b> {esc(v.gaps[0])}")
-
-    lines.append(f"\n{esc(v.url)}")
+        shown = ", ".join(esc(m) for m in v.matched[:4])
+        more = len(v.matched) - 4
+        lines.append(shown + (f" +{more}" if more > 0 else ""))
+    lines.append(esc(v.url))
     return "\n".join(lines)
 
 

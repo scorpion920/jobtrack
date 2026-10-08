@@ -93,3 +93,42 @@ def test_digest_numbers_match_the_keyboard():
     for n, row in enumerate(keyboard, start=1):
         assert row[0]["text"].startswith(f"{n} ")
         assert f"{n}. " in text
+
+
+def test_authorization_needs_both_sender_and_chat(monkeypatch):
+    """Авторизація, яку можна задовольнити ПОЛОВИНОЮ умови, не є авторизацією.
+
+    Перша редакція перевіряла `allowed in {sender, chat}` — «або-або». Цього
+    не досить: збігу самого лише чату достатньо, щоб дію виконав хтось
+    інший. Найпростіший випадок — бот у групі, де натискає будь-хто.
+    """
+    from app import bot_actions
+    from app.config import Settings
+
+    monkeypatch.setattr(bot_actions, "get_settings",
+                        lambda: Settings(telegram_chat_id="555"))
+
+    # Свій відправник у своєму чаті.
+    assert bot_actions._is_owner({"from": {"id": 555},
+                                  "message": {"chat": {"id": 555}}})
+    # Свій відправник без чату (inline-режим).
+    assert bot_actions._is_owner({"from": {"id": 555}})
+
+    # Чужий відправник у НАШОМУ чаті — саме випадок, який пропускала
+    # перша редакція.
+    assert not bot_actions._is_owner({"from": {"id": 999},
+                                      "message": {"chat": {"id": 555}}})
+    # Свій відправник у чужому чаті (бот доданий у групу).
+    assert not bot_actions._is_owner({"from": {"id": 555},
+                                      "message": {"chat": {"id": -100200}}})
+
+
+def test_unconfigured_chat_allows_nobody(monkeypatch):
+    """Порожнє значення не може означати «пускати всіх»."""
+    from app import bot_actions
+    from app.config import Settings
+
+    monkeypatch.setattr(bot_actions, "get_settings",
+                        lambda: Settings(telegram_chat_id=""))
+    assert not bot_actions._is_owner({"from": {"id": 555},
+                                      "message": {"chat": {"id": 555}}})

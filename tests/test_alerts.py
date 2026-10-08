@@ -145,9 +145,12 @@ def test_notification_carries_enough_to_decide():
     assert "англ. B2" in text
     assert "Україна" in text
     assert "3 відгуків" in text              # наскільки людно
-    assert "Збіг:" in text and "FastAPI" in text
-    assert "Бракує:" in text and "Django" in text
+    assert "FastAPI" in text                 # чим збігається
     assert v.url in text
+    # Картка скорочена до чотирьох рядків: кнопки Telegram ставляться лише
+    # ПІД повідомленням, тож «кнопки навпроти кожної вакансії» означають
+    # окремі повідомлення, а їх читають тільки доти, доки вони короткі.
+    assert len(text.splitlines()) == 4
 
 
 def test_possible_and_strong_are_visually_distinct():
@@ -158,12 +161,12 @@ def test_possible_and_strong_are_visually_distinct():
 
 
 def test_long_match_list_is_shortened_with_a_counter():
-    """П'ять збігів на екрані, решта числом: довгий перелік перестають читати."""
+    """Чотири збіги на екрані, решта числом: довгий перелік перестають читати."""
     from app.alerts import describe
 
     text = describe(_v(matched=tuple(f"skill{i}" for i in range(9))))
-    assert "+4" in text
-    assert "skill5" not in text
+    assert "+5" in text
+    assert "skill4" not in text
 
 
 def test_english_not_needed_is_said_in_words():
@@ -200,4 +203,6 @@ def test_every_external_field_is_escaped():
                        matched=("<i>M</i>",), gaps=("<i>G</i>",)))
     # Жодного чужого тега не лишилось — тільки наші <b>.
     assert "<i>" not in text
-    assert text.count("&lt;i&gt;") == 8
+    # Шість полів у картці: компанія, посада, формат, англійська, локація,
+    # джерело, плюс збіг і адреса — прогалини в компактний формат не входять.
+    assert text.count("&lt;i&gt;") == 8 - 1
