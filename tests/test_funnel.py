@@ -91,3 +91,34 @@ def test_missing_cv_version_is_labelled_not_dropped():
 def test_unknown_split_fails_loudly():
     with pytest.raises(ValueError):
         build([make()], key="щось-вигадане")
+
+
+class TestAutoReplyIsNotEvidence:
+    """Автовідповідь не є доказом того, що подачу переглянула людина.
+
+    Знайдено 08.10 на першій же подачі: відповідь за три хвилини з позначкою
+    Djinni «Це автоматична відповідь». Якби збирач зараховував такі як
+    «переглянуто», воронка показувала б перегляди там, де їх не було — і
+    єдине число, заради якого ведеться журнал, стало б неправдивим.
+
+    Механізм не випадковий: з жовтня 2024 Djinni не дає перепублікувати
+    вакансію, не розібравши непрочитані відгуки, тож масова автоматична
+    відмова теж іде в їхню статистику як відповідь.
+    """
+
+    def test_sent_without_events_is_not_seen(self):
+        rows = build([make()])
+        assert rows[0].viewed == 0
+
+    def test_explicit_rejection_still_counts_as_seen(self):
+        """Межа: відмова, написана людиною, доказом лишається."""
+        rows = build([make(Channel.djinni, "backend", date(2026, 10, 1), Status.rejected)])
+        assert rows[0].viewed == 1
+
+    def test_collector_has_auto_reply_guard(self):
+        """Сторож проти повернення вади: правило живе в collect.js."""
+        from pathlib import Path
+        js = (Path(__file__).resolve().parent.parent / "app" / "static"
+              / "collect.js").read_text(encoding="utf-8")
+        assert "автоматична відповідь" in js, "збирач не розпізнає автовідповіді"
+        assert "AUTO.test(blob)" in js, "перевірка AUTO не застосовується"
