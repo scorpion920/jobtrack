@@ -142,3 +142,23 @@ def test_user_agent_carries_a_contact():
 
     agent = Settings(scraper_contact="someone@example.com").user_agent
     assert "jobtrack" in agent and "someone@example.com" in agent
+
+
+def test_specialization_filter_is_stripped_for_comparison():
+    """База для порівняння — той самий перелік без фільтра спеціалізації.
+
+    Потрібне тому, що Djinni не відкидає невідоме значення фільтра і не
+    повідомляє про помилку: він ехо-відбиває його в розмітці й віддає
+    ЗАГАЛЬНУ стрічку. Перевірено 08.10.2026 — `AI_ML`, `ML%2FAI` і вигадане
+    `Machine_Learning` дали ті самі 15 вакансій, що й перелік без фільтра.
+    Єдина ознака недієвого фільтра — збіг набору з нефільтрованим.
+    """
+    from app.sources.djinni import strip_specialization
+
+    assert strip_specialization("/jobs/?primary_keyword=Python&exp_level=1y") == \
+        "/jobs/?exp_level=1y"
+    assert strip_specialization("/jobs/?exp_level=1y&primary_keyword=Python") == \
+        "/jobs/?exp_level=1y"
+    assert strip_specialization("/jobs/?primary_keyword=Python") == "/jobs/"
+    # Без фільтра перелік не змінюється — отже й перевіряти нема чого.
+    assert strip_specialization("/jobs/?exp_level=1y") == "/jobs/?exp_level=1y"

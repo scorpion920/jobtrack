@@ -21,6 +21,7 @@ from typing import Iterable
 from bs4 import BeautifulSoup, Tag
 
 from app.sources.base import RawVacancy
+from app.sources.rss import is_safe_link
 
 KEY = "djinni"
 BASE = "https://djinni.co"
@@ -92,6 +93,12 @@ def parse_listing(html: str) -> list[RawVacancy]:
         title = _text(block.find("h2", class_="job-item__position"))
         if not link or not link.get("href") or not title:
             continue
+        # Адреса з чужої сторінки доходить до `href` на нашій. Приймаємо лише
+        # відносний шлях у межах майданчика: усе інше — або чужий домен, або
+        # схема, якої в посиланні на вакансію бути не може.
+        href = link["href"]
+        if not href.startswith("/") or href.startswith("//"):
+            continue
 
         company_node = block.find("span", class_="text-gray-800")
         facts = _facts(block)
@@ -106,7 +113,7 @@ def parse_listing(html: str) -> list[RawVacancy]:
         out.append(RawVacancy(
             source_key=KEY,
             external_id=external_id,
-            url=BASE + link["href"],
+            url=BASE + href,
             title=title,
             company=_text(company_node) or "—",
             # Назва й компанія входять у текст свідомо: скринер шукає
@@ -228,3 +235,53 @@ class DjinniSource:
         if not out and failures:
             raise RuntimeError("канал djinni не дав нічого: " + "; ".join(failures))
         return out
+
+
+def strip_specialization(listing: str) -> str:
+    """Той самий перелік без фільтра спеціалізації — база для порівняння."""
+    bare = re.sub(r"[?&]primary_keyword=[^&]*", "", listing)
+    if bare != listing and "?" not in bare:
+        bare = bare.replace("&", "?", 1)
+    return bare
+
+
+async def validate_listing(listing: str) -> tuple[bool, str]:
+    """Перевірити, що фільтр у переліку СПРАВДІ звужує видачу.
+
+    Навіщо окрема перевірка. Djinni не відкидає невідоме значення фільтра і
+    не повідомляє про помилку — він ехо-відбиває його в розмітці й віддає
+    ЗАГАЛЬНУ стрічку. Перевірено 08.10.2026: `primary_keyword=AI_ML`,
+    `ML%2FAI` і навіть вигадане `Machine_Learning` дали ті самі 15 вакансій,
+    що й перелік без фільтра — і в базу приїхали Reddit Farmer, Sales Manager
+    і Creative Motion Designer замість Python-вакансій.
+
+    Ознака, за якою це видно, лише одна: набір вакансій збігається з
+    нефільтрованим. Наявність фільтра в розмітці нічого не доводить, бо
+    майданчик відбиває будь-що.
+
+    Викликається при ЗАВЕДЕННІ каналу, а не на кожному прогоні: це перевірка
+    налаштування, і подвоювати запити на гарячому шляху заради неї не можна.
+    """
+    bare = strip_specialization(listing)
+    if bare == listing:
+        return True, "фільтр спеціалізації не задано — перевіряти нема чого"
+
+    headers = {"User-Agent": get_settings().user_agent}
+    async with httpx.AsyncClient(headers=headers, timeout=30.0,
+                                 follow_redirects=True) as client:
+        filtered = parse_listing((await client.get(BASE + listing)).text)
+        await asyncio.sleep(MIN_INTERVAL_SECONDS)
+        unfiltered = parse_listing((await client.get(BASE + bare)).text)
+
+    if not filtered:
+        return False, "фільтр не дав жодної вакансії"
+
+    ids_filtered = {r.external_id for r in filtered}
+    ids_unfiltered = {r.external_id for r in unfiltered}
+    overlap = len(ids_filtered & ids_unfiltered)
+
+    if ids_unfiltered and ids_filtered <= ids_unfiltered:
+        return False, (f"фільтр недієвий: усі {len(ids_filtered)} вакансій збігаються "
+                       f"з нефільтрованим переліком — майданчик проігнорував значення")
+    return True, (f"фільтр дієвий: {len(ids_filtered)} вакансій, "
+                  f"спільних із загальним {overlap}")

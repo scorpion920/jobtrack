@@ -21,6 +21,16 @@ from xml.etree import ElementTree
 _TAGS = re.compile(r"<[^>]+>")
 _SPACE = re.compile(r"[ \t]+")
 
+# Посилання з чужого фіду потрапляє просто в `href` на нашій сторінці.
+# Екранування Jinja захищає від лапок, але НЕ від схеми: `javascript:alert(1)`
+# у `<link>` лишився б клікабельним кодом. Тому схема перевіряється на вході —
+# це інваріант, а не фільтр на виході.
+_SAFE_SCHEME = re.compile(r"^https?://", re.I)
+
+
+def is_safe_link(url: str) -> bool:
+    return bool(_SAFE_SCHEME.match((url or "").strip()))
+
 
 @dataclass(frozen=True)
 class FeedItem:
@@ -55,6 +65,11 @@ def parse_feed(xml: str) -> list[FeedItem]:
         title = (item.findtext("title") or "").strip()
         link = (item.findtext("link") or "").strip()
         if not title or not link:
+            continue
+        if not is_safe_link(link):
+            # Запис із посиланням небезпечної схеми не беремо взагалі:
+            # «полагодити» таке посилання неможливо, а вакансія без робочої
+            # адреси все одно нічого не варта.
             continue
 
         raw_date = item.findtext("pubDate")
