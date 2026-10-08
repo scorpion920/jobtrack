@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from app.screen import Profile, assess
+from app.screen import Candidate, Profile, assess, find_alternative
 
 
 def test_everything_known_and_suitable():
@@ -57,3 +57,78 @@ def test_profile_is_a_parameter_not_a_constant():
     strict = Profile(years=5, english="c1", remote_only=False)
     assert assess(format="office", years_required=3, english="c1",
                   profile=strict).state == "ok"
+
+
+def test_foreign_only_location_blocks():
+    """Країна, де розглядають кандидатів, блокує подачу так само жорстко.
+
+    Знайдено 08.10.2026 на вакансії N-iX 852170: Djinni не дав подати,
+    бо компанія розглядає кандидатів із Польщі, а в профілі Україна.
+    Дані для цієї перевірки система вже мала з першого збору
+    (location='Польща') — бракувало самої перевірки, і вакансія стояла
+    в переліку як придатна.
+    """
+    v = assess(format="remote", years_required=1, english="b2", location="Польща")
+    assert v.blocked and "Польща" in v.reason
+
+
+def test_ukraine_among_countries_is_fine():
+    for loc in ("Україна", "Україна (Київ)", "Країни Європи та Україна"):
+        assert assess(format="remote", years_required=1, english="b2",
+                      location=loc).state == "ok", loc
+
+
+def test_city_names_are_not_treated_as_foreign_countries():
+    """DOU кладе в локацію МІСТА офісів, Djinni — країни кандидатів.
+
+    Блокувати за назвою міста не можна: «Київ, Львів» перетворилося б на
+    перепону там, де її немає.
+    """
+    for loc in ("Київ, Львів", "Дніпро", "за кордоном", None):
+        assert not assess(format="remote", years_required=1, english="b2",
+                          location=loc).blocked, loc
+
+
+def _c(url, company="n ix", title="junior data engineer 6 month engagement",
+       blocked=False):
+    return Candidate(url=url, company_norm=company, title_norm=title, blocked=blocked)
+
+
+def test_alternative_is_found_despite_suffix_in_title():
+    """Варіанти однієї посади різняться суфіксом «(#5893)»."""
+    blocked = _c("https://x/852170", blocked=True)
+    ok = _c("https://x/851766", title="junior data engineer 6 month engagement 5893")
+    assert find_alternative(blocked, [blocked, ok]) == "https://x/851766"
+
+
+def test_no_alternative_when_the_other_variant_is_also_blocked():
+    """Випадок N-iX, перевірений 08.10.2026.
+
+    Польський варіант не бере кандидатів з України, український вимагає
+    5 років замість 1. Обидва недоступні, і функція правильно НЕ пропонує
+    нічого. Саме цю тишу легко прийняти за поломку й «полагодити»,
+    зробивши підказку хибною.
+    """
+    a = _c("https://x/852170", blocked=True)
+    b = _c("https://x/851766", title="junior data engineer 6 month engagement 5893",
+           blocked=True)
+    assert find_alternative(a, [a, b]) is None
+
+
+def test_other_company_is_not_an_alternative():
+    a = _c("https://x/1", blocked=True)
+    b = _c("https://x/2", company="інша компанія")
+    assert find_alternative(a, [a, b]) is None
+
+
+def test_short_title_does_not_match_by_prefix():
+    """«qa» всередині «qa automation engineer» — не та сама посада."""
+    a = _c("https://x/1", title="qa", blocked=True)
+    b = _c("https://x/2", title="qa automation engineer")
+    assert find_alternative(a, [a, b]) is None
+
+
+def test_suitable_vacancy_gets_no_alternative():
+    a = _c("https://x/1")
+    b = _c("https://x/2", title="junior data engineer 6 month engagement 5893")
+    assert find_alternative(a, [a, b]) is None

@@ -50,7 +50,9 @@
     <td class="sub">{{ (v.english or '—')|upper }}</td>
     <td class="num">{{ v.replies if v.replies is not none else '—' }}</td>
     <td class="sub">{{ '$' * v.salary_tier if v.salary_tier else '' }}</td>
-    <td class="sub">{% if v.reason %}{{ v.reason }}{% elif v.unchecked %}<span
+    <td class="sub">{% if v.alternative %}<a href="{{ v.alternative }}" target="_blank"
+        rel="noopener" title="та сама посада в доступному варіанті">{{ v.reason }} →
+        є інший варіант</a>{% elif v.reason %}{{ v.reason }}{% elif v.unchecked %}<span
         title="канал не повідомляє цих ознак — відкрийте вакансію">не вказано: {{ v.unchecked }}</span>{% endif %}</td>
   </tr>
   {% endfor %}

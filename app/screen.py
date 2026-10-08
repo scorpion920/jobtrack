@@ -17,9 +17,20 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 
 from app.vacancy_facts import ENGLISH_LEVELS
+
+# Країни, згадка яких БЕЗ згадки України означає, що кандидатів звідси не
+# розглядають. Перелік консервативний навмисно: у Djinni локація — це
+# «країни, де розглядаємо кандидатів», а в DOU — міста офісів. Блокувати за
+# самою лише назвою міста не можна, інакше «Київ, Львів» стало б перепоною.
+_FOREIGN_ONLY = re.compile(
+    r"польщ|німеччин|сша|велика британ|кіпр|португал|іспан|естон|чехі|"
+    r"румун|болгар|грузі|казахстан|молдов|словач|литв|латві|угорщин|"
+    r"нідерланд|канад|ізраїл|туреччин", re.I)
+_UKRAINE = re.compile(r"україн", re.I)
 
 
 @dataclass(frozen=True)
@@ -29,6 +40,7 @@ class Profile:
     years: int = 1
     english: str = "b2"
     remote_only: bool = True
+    country: str = "Україна"
 
     @property
     def english_level(self) -> int:
@@ -63,6 +75,7 @@ class Verdict:
 
 
 def assess(*, format: str | None, years_required: int | None, english: str | None,
+           location: str | None = None,
            profile: Profile = DEFAULT_PROFILE) -> Verdict:
     reasons: list[str] = []
     unchecked: list[str] = []
@@ -79,6 +92,13 @@ def assess(*, format: str | None, years_required: int | None, english: str | Non
     elif years_required is None:
         unchecked.append("роки")
 
+    # Країна, де розглядають кандидатів. Djinni блокує подачу так само
+    # жорстко, як і за порогом років — перевірено 08.10.2026 на вакансії
+    # N-iX 852170 («Польща», у профілі Україна). Дані для цієї перевірки у
+    # нас БУЛИ з першого збору; бракувало самої перевірки.
+    if location and _FOREIGN_ONLY.search(location) and not _UKRAINE.search(location):
+        reasons.append(f"кандидати з: {location}")
+
     level = ENGLISH_LEVELS.get(english or "", None)
     if level is not None and level > profile.english_level:
         reasons.append(f"англійська {english.upper()}")
@@ -87,3 +107,47 @@ def assess(*, format: str | None, years_required: int | None, english: str | Non
 
     return Verdict(blocked=bool(reasons), reason=", ".join(reasons),
                    unchecked=tuple(unchecked))
+
+
+@dataclass(frozen=True)
+class Candidate:
+    """Мінімум, потрібний, щоб упізнати варіанти однієї вакансії."""
+
+    url: str
+    company_norm: str
+    title_norm: str
+    blocked: bool
+
+
+def find_alternative(target: Candidate, others: list[Candidate]) -> str | None:
+    """Доступний варіант тієї самої вакансії, якщо він є.
+
+    Компанії публікують одну посаду кількома оголошеннями — під різні країни
+    чи рівні. Коли одне заблоковане, а інше ні, показати друге корисніше за
+    будь-яку підказку.
+
+    Зіставлення нечітке навмисно: варіанти різняться суфіксом
+    («Junior Data Engineer (6-Month Engagement)» проти того самого з
+    «(#5893)»), і точний збіг нормалізованих назв їх не бачить.
+
+    Перевірено на N-iX 08.10.2026, і перевірка виявилась важливішою за
+    підказку: другий варіант там теж недоступний — польський не бере
+    кандидатів з України, український вимагає 5 років замість 1. Функція
+    правильно НЕ пропонує нічого. Саме цю різницю легко прийняти за поломку
+    і «полагодити», зробивши підказку хибною.
+    """
+    if not target.blocked:
+        return None
+
+    for other in others:
+        if other.blocked or other.url == target.url:
+            continue
+        if other.company_norm != target.company_norm:
+            continue
+        short, long = sorted((other.title_norm, target.title_norm), key=len)
+        # Поріг довжини відсікає випадкові збіги на кшталт «qa» всередині
+        # «qa automation engineer»: надто коротка назва не доводить, що це
+        # та сама посада.
+        if len(short) >= 15 and long.startswith(short):
+            return other.url
+    return None

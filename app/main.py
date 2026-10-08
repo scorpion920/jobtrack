@@ -25,7 +25,7 @@ from app.api.applications import router as applications_router
 from app.api.sync import router as sync_router
 from app.api.vacancies import router as vacancies_router
 from app.collect import collect
-from app.screen import assess
+from app.screen import Candidate, assess, find_alternative
 from app.config import get_settings
 from app.db import get_session
 from app.funnel import build as build_funnel
@@ -194,12 +194,19 @@ async def vacancies(request: Request, message: str | None = None,
     view = []
     for v in rows:
         verdict = assess(format=v.format, years_required=v.years_required,
-                         english=v.english)
+                         english=v.english, location=v.location)
         view.append(SimpleNamespace(**{c.name: getattr(v, c.name)
                                        for c in Vacancy.__table__.columns},
                                     blocked=verdict.blocked, reason=verdict.reason,
                                     state=verdict.state,
                                     unchecked=", ".join(verdict.unchecked)))
+
+    # Той самий варіант посади в доступному вигляді, якщо він є.
+    pool = [Candidate(url=v.url, company_norm=v.company_norm,
+                      title_norm=v.title_norm, blocked=v.state == "blocked")
+            for v in view]
+    for v, me in zip(view, pool):
+        v.alternative = find_alternative(me, pool)
 
     last = max((s.last_run_at for s in sources if s.last_run_at), default=None)
     return templates.TemplateResponse(request, "vacancies.html", {
