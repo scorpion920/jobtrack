@@ -22,7 +22,7 @@ from sqlalchemy.orm import selectinload
 
 from app.config import get_settings
 from app.db import get_session
-from app.models import Application, ApplicationEvent, Channel, Status
+from app.models import Application, ApplicationEvent, Channel, Status, SyncRun
 from app.sync import Candidate, SyncItem, plan_sync
 
 router = APIRouter(prefix="/api/sync", tags=["sync"])
@@ -42,6 +42,12 @@ class SyncItemIn(BaseModel):
 class SyncIn(BaseModel):
     source: Channel
     items: list[SyncItemIn]
+    # Чим ініційовано прогін і що збирач сам про нього повідомляє. Потрібне,
+    # щоб порожній результат мав ПРИЧИНУ, а не виглядав як тиша: «прочитано
+    # 2 сторінки, рядків не знайдено» і «скрипт не запускався» — це різні
+    # поломки, які лікуються в різних місцях.
+    origin: str = "unknown"
+    note: str | None = None
     # За замовчуванням НЕ пишемо. Записати мовчки те, що невідомо звідки
     # взялося, — найгірший із можливих варіантів для журналу.
     dry_run: bool = True
@@ -111,7 +117,20 @@ async def sync(payload: SyncIn,
                     if not (e.application_id is None and e.status == "sent")]),
     )
 
+    async def _log_run() -> None:
+        """Прогін записується ЗАВЖДИ, включно з порожнім і з пробним.
+
+        Саме порожній прогін і несе діагностику: його відсутність означає, що
+        збирач не дійшов до сервера взагалі."""
+        session.add(SyncRun(source=payload.source, received=report.received,
+                            created=report.created,
+                            events_added=report.events_added,
+                            origin=payload.origin[:40], dry_run=payload.dry_run,
+                            note=payload.note))
+
     if payload.dry_run:
+        await _log_run()
+        await session.commit()
         return report
 
     created_ids: dict[int, int] = {}
@@ -137,5 +156,6 @@ async def sync(payload: SyncIn,
                                      occurred_on=event.occurred_on,
                                      note=event.note, origin="browser-sync"))
 
+    await _log_run()
     await session.commit()
     return report

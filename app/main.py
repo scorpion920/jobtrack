@@ -25,7 +25,7 @@ from app.api.sync import router as sync_router
 from app.config import get_settings
 from app.db import get_session
 from app.funnel import build as build_funnel
-from app.models import Application, ApplicationEvent, Channel, Status
+from app.models import Application, ApplicationEvent, Channel, Status, SyncRun
 
 BASE_DIR = Path(__file__).resolve().parent
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
@@ -136,7 +136,8 @@ async def userscript(request: Request):
 
 
 @app.get("/sync", response_class=HTMLResponse)
-async def sync_page(request: Request):
+async def sync_page(request: Request,
+                    session: AsyncSession = Depends(get_session)):
     """Сторінка з інструментом збору статусів.
 
     Токен підставляється в сам скрипт: інакше користувачеві довелося б копіювати
@@ -145,6 +146,12 @@ async def sync_page(request: Request):
     межі машини.
     """
     cfg = get_settings()
+    # Останні прогони — головна відповідь на питання «чи працює збирач».
+    # ВІДСУТНІСТЬ рядків і рядок із received=0 означають різні поломки, тому
+    # показуємо саме журнал, а не «час останнього успіху».
+    runs = list((await session.execute(
+        select(SyncRun).order_by(SyncRun.at.desc()).limit(10)
+    )).scalars())
     js = (BASE_DIR / "static" / "collect.js").read_text(encoding="utf-8")
     js = (js.replace("__API__", str(request.base_url).rstrip("/"))
             .replace("__TOKEN__", cfg.sync_token)
@@ -159,6 +166,7 @@ async def sync_page(request: Request):
                         .replace("__TOKEN__", cfg.sync_token)),
         "bookmarklet": "javascript:" + quote(minified, safe=""),
         "token_set": bool(cfg.sync_token),
+        "runs": runs,
     })
 
 

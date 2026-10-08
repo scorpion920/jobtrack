@@ -16,7 +16,7 @@ import enum
 from datetime import date, datetime
 
 from sqlalchemy import (
-    Date, DateTime, Enum, ForeignKey, Index, Integer, String, Text, func,
+    Boolean, Date, DateTime, Enum, ForeignKey, Index, Integer, String, Text, func,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -188,3 +188,45 @@ class ApplicationEvent(Base):
     application: Mapped[Application] = relationship(back_populates="events")
 
     __table_args__ = (Index("ix_event_application", "application_id", "occurred_on"),)
+
+
+class SyncRun(Base):
+    """Журнал прогонів збирача статусів.
+
+    Чому журнал ПРОГОНІВ, а не поле «час останньої успішної синхронізації».
+
+    Поле з часом успіху відповідає лише на питання «чи колись спрацювало» і
+    мовчить про найцінніше: прогін, який відбувся і не знайшов НІЧОГО. А саме
+    ці два стани й треба розрізняти, коли збирач не дає даних:
+
+        рядка немає взагалі   → скрипт не запускався (не встановлений,
+                                не та вкладка, браузер не відкривав Djinni)
+        рядок є, received=0   → скрипт працює, але не бачить розмітки
+                                (вийшли з акаунта, або Djinni змінив DOM)
+
+    Без цього розрізнення обидва випадки виглядають однаково — як тиша, — і
+    власник шукає поламку не там, де вона є. Тому порожній прогін пишеться
+    так само обов'язково, як і результативний.
+    """
+
+    __tablename__ = "sync_run"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    source: Mapped[Channel] = mapped_column(Enum(Channel, name="channel"))
+
+    received: Mapped[int] = mapped_column(Integer, default=0)
+    created: Mapped[int] = mapped_column(Integer, default=0)
+    events_added: Mapped[int] = mapped_column(Integer, default=0)
+
+    # Чим ініційовано: "userscript" (автоматично) чи "bookmarklet" (руками).
+    origin: Mapped[str] = mapped_column(String(40), default="unknown")
+    dry_run: Mapped[bool] = mapped_column(Boolean, default=False)
+
+    # Що сам збирач повідомив про прогін: скільки сторінок прочитано, чи був
+    # він на потрібній сторінці, що завадило. Текст — бо це діагностика для
+    # людини, а не дані для запиту.
+    note: Mapped[str | None] = mapped_column(Text)
+
+    at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    __table_args__ = (Index("ix_sync_run_at", "at"),)

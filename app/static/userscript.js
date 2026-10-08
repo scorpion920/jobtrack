@@ -1,10 +1,12 @@
 // ==UserScript==
 // @name         jobtrack — автоматичний збір статусів Djinni
 // @namespace    jobtrack
-// @version      1.0
+// @version      1.1
 // @description  Періодично читає сторінку відгуків у ВАШІЙ сесії й надсилає статуси в локальний журнал. Нічого не зберігає, нікуди не логіниться.
 // @match        https://djinni.co/*
 // @run-at       document-idle
+// @downloadURL  __API__/userscript.user.js
+// @updateURL    __API__/userscript.user.js
 // @grant        none
 // ==/UserScript==
 
@@ -88,35 +90,82 @@
   function bucket(name) {
     var url = name ? "/my/inbox?bucket=" + name : "/my/inbox";
     return fetch(url, { credentials: "include" })
-      .then(function (r) { return r.text(); })
+      .then(function (r) {
+        if (!r.ok) throw new Error(url + " віддав " + r.status);
+        return r.text();
+      })
       .then(function (html) {
         return rowsIn(new DOMParser().parseFromString(html, "text/html"));
       })
-      .catch(function () { return []; });
+      .catch(function (e) {
+        // Німий `return []` тут підміняв БИ причину: далі прогін повідомляв
+        // «рядків не знайдено», тобто звинувачував сесію або розмітку, тоді
+        // як насправді не вдався сам запит. Обхід, що спотворює діагноз,
+        // шкідливіший за його відсутність.
+        console.warn("[jobtrack] не прочитано " + url + ":", (e && e.message) || e);
+        failures.push(url + ": " + ((e && e.message) || e));
+        return [];
+      });
+  }
+
+  /* Про гучність.
+   *
+   * Перша версія мовчки виходила, якщо рядків не знайдено, а помилку мережі
+   * писала через console.debug — рівень, прихований у консолі за замовчуванням.
+   * Наслідок виявився одразу після встановлення: скрипт віддано браузеру,
+   * даних немає, і неможливо сказати, чи він узагалі запускався.
+   *
+   * Тому тепер кожен вихід лишає слід, а ПОРОЖНІЙ прогін надсилається на
+   * сервер так само, як результативний: відсутність запису в журналі означає
+   * «не дійшло до сервера», а запис із received=0 — «дійшло, але сторінка
+   * інша». Це різні поломки, і лікуються вони в різних місцях.
+   */
+  // Причини невдалих читань поточного прогону. Накопичуються тут, бо
+  // console.warn бачить лише той, хто відкрив консоль, а примітка прогону
+  // лишається в журналі й відповідає на питання «чому порожньо» назавжди.
+  var failures = [];
+
+  function post(rows, note) {
+    return fetch(API + "/api/sync", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Sync-Token": TOKEN },
+      body: JSON.stringify({ source: "djinni", items: rows, dry_run: false,
+                             origin: "userscript", note: note })
+    }).then(function (r) {
+      if (!r.ok) throw new Error("сервер відповів " + r.status);
+      return r.json();
+    }).then(function (rep) {
+      try { localStorage.setItem(KEY, String(Date.now())); } catch (e) {}
+      console.log("[jobtrack] прогін записано: рядків " + rep.received +
+                  ", нових подач " + rep.created + ", нових подій " + rep.events_added +
+                  (note ? " — " + note : ""));
+      return rep;
+    });
   }
 
   function sync() {
+    console.log("[jobtrack] прогін почався");
+    failures = [];
     return Promise.all([bucket(""), bucket("archive")]).then(function (parts) {
-      var rows = [], seen = {};
+      var rows = [], seen = {}, note;
       parts.forEach(function (p) {
         p.forEach(function (r) { if (!seen[r.url]) { seen[r.url] = true; rows.push(r); } });
       });
-      if (!rows.length) return;                       // не залогінені або інша розмітка
 
-      return fetch(API + "/api/sync", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "X-Sync-Token": TOKEN },
-        body: JSON.stringify({ source: "djinni", items: rows, dry_run: false })
-      }).then(function (r) { return r.json(); }).then(function (rep) {
-        try { localStorage.setItem(KEY, String(Date.now())); } catch (e) {}
-        if (rep.created || rep.events_added) {
-          console.log("[jobtrack] синхронізовано: +" + rep.created + " подач, +" +
-                      rep.events_added + " подій із " + rep.received + " рядків");
-        }
-      });
+      note = "вхідні: " + parts[0].length + ", архів: " + parts[1].length;
+      if (!rows.length) {
+        // Найімовірніша причина — сесія не активна: сторінка відгуків за
+        // логіном віддає форму входу, у якій розмітки відгуків немає.
+        note += failures.length
+          ? " — сторінки не прочитались: " + failures.join("; ")
+          : " — рядків не знайдено (вийшли з акаунта або змінилась розмітка)";
+        console.warn("[jobtrack] " + note);
+      }
+      return post(rows, note);
     }).catch(function (e) {
-      // Локальний сервіс може бути не піднятий — це нормальний стан, не помилка.
-      console.debug("[jobtrack] журнал недоступний:", e && e.message);
+      // Сервіс може бути не піднятий — це робочий стан, але НЕ мовчазний:
+      // саме він найчастіше й пояснює, чому в журналі порожньо.
+      console.warn("[jobtrack] прогін не вдався:", (e && e.message) || e);
     });
   }
 

@@ -25,6 +25,38 @@
 Djinni. Повністю фоновий збір означав би зберігати вашу сесію на сервері, а від
 цього ми відмовились.</p>
 
+<h3 style="font-size:14px;margin-top:20px">Чи працює</h3>
+{% if runs %}
+<p class="sub">Останній прогін:
+  <strong>{{ runs[0].at.strftime('%d.%m %H:%M') }}</strong>
+  {% if runs[0].received %}
+    — прочитано {{ runs[0].received }} рядків. Збирач працює.
+  {% else %}
+    — <strong style="color:#b45309">рядків не знайдено.</strong>
+    Скрипт дійшов до журналу, але не побачив відгуків: найімовірніше ви вийшли
+    з акаунта Djinni, або майданчик змінив розмітку.
+  {% endif %}
+</p>
+<table style="font-size:13px;margin-top:8px">
+  <tr><th>коли</th><th>рядків</th><th>нових подач</th><th>нових подій</th><th>звідки</th><th>примітка</th></tr>
+  {% for r in runs %}
+  <tr>
+    <td>{{ r.at.strftime('%d.%m %H:%M') }}</td>
+    <td>{{ r.received }}</td><td>{{ r.created }}</td><td>{{ r.events_added }}</td>
+    <td>{{ r.origin }}{% if r.dry_run %} (проба){% endif %}</td>
+    <td class="sub">{{ r.note or '' }}</td>
+  </tr>
+  {% endfor %}
+</table>
+{% else %}
+<p class="sub"><strong style="color:#b45309">Жодного прогону ще не було.</strong>
+Це означає, що збирач не дійшов до журналу взагалі — скрипт не встановлено, або
+не відкривалася жодна вкладка Djinni після встановлення, або браузер не пускає
+запит сюди. Відкрийте будь-яку сторінку Djinni, зачекайте десять секунд і
+оновіть цю сторінку. Якщо порожньо й далі — <code>F12</code> → Console, фільтр
+<code>jobtrack</code>: від версії 1.1 скрипт пише туди причину.</p>
+{% endif %}
+
 <h2 style="font-size:15px;margin-top:26px">Спосіб 1 — консоль (разово, працює завжди)</h2>
 <p class="sub">Відкрийте сторінку своїх відгуків, натисніть <code>F12</code> →
 вкладка <em>Console</em>, вставте це й натисніть Enter.</p>
