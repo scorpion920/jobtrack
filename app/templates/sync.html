@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}Синхронізація — jobtrack{% endblock %}
+{% block body %}
+<h1>Статуси з браузера</h1>
+<p class="sub">Сторінка відгуків лежить за логіном. Автоматизувати вхід означало б
+тримати ваш пароль і ризикувати акаунтом, який є єдиним каналом пошуку. Тому
+сторінку читаєте <strong>ви, у своїй сесії</strong>, а сюди приходить готовий витяг.</p>
+
+<h2 style="font-size:15px;margin-top:22px">Спосіб 1 — консоль (працює завжди)</h2>
+<p class="sub">Відкрийте сторінку своїх відгуків, натисніть <code>F12</code> →
+вкладка <em>Console</em>, вставте це й натисніть Enter.</p>
+<textarea readonly rows="3" style="font-family:ui-monospace,monospace;font-size:12px"
+          onclick="this.select()">{{ snippet }}</textarea>
+
+<h2 style="font-size:15px;margin-top:26px">Спосіб 2 — закладка</h2>
+<p class="sub">Перетягніть посилання на панель закладок. Якщо сайт забороняє
+виконання вбудованих скриптів, скористайтесь способом&nbsp;1.</p>
+<p><a href="{{ bookmarklet }}" style="display:inline-block;padding:7px 14px;
+   border:1px solid var(--accent);border-radius:6px;color:var(--accent);
+   text-decoration:none;font-weight:600">jobtrack: зібрати статуси</a></p>
+
+<h2 style="font-size:15px;margin-top:26px">Що станеться</h2>
+<ul class="sub" style="line-height:1.7">
+  <li>Скрипт прочитає рядки на відкритій сторінці й покаже, <strong>що саме знайшов</strong>.</li>
+  <li>Доки ви не підтвердите — <strong>нічого не записується</strong>.</li>
+  <li>Незнайомі написання статусів він перелічить окремо. Перший прогін — це
+      розвідка розмітки: селектори написані наосліп, бо сторінка за логіном.</li>
+  <li>Повторний запуск не створює дублів: той самий статус тією самою датою
+      розпізнається як уже записаний.</li>
+</ul>
+
+{% if not token_set %}
+<p style="color:#b45309;font-weight:600;margin-top:20px">
+  ⚠️ <code>SYNC_TOKEN</code> не заданий у <code>.env</code> — синхронізація вимкнена.</p>
+{% endif %}
+{% endblock %}

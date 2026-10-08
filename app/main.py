@@ -7,6 +7,7 @@ SPA тут немає навмисно. Поверхня — три сторін
 from __future__ import annotations
 
 from pathlib import Path
+from urllib.parse import quote
 
 from datetime import date
 
@@ -18,6 +19,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.api.applications import router as applications_router
+from app.api.sync import router as sync_router
+from app.config import get_settings
 from app.db import get_session
 from app.funnel import build as build_funnel
 from app.models import Application, ApplicationEvent, Channel, Status
@@ -28,6 +31,7 @@ templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 app = FastAPI(title="jobtrack", version="0.1.0",
               description="Журнал подач і моніторинг вакансій")
 app.include_router(applications_router)
+app.include_router(sync_router)
 
 
 @app.get("/health")
@@ -77,6 +81,29 @@ async def ui_create(
                                  occurred_on=applied_on, origin="manual"))
     await session.commit()
     return RedirectResponse("/", status_code=303)
+
+
+@app.get("/sync", response_class=HTMLResponse)
+async def sync_page(request: Request):
+    """Сторінка з інструментом збору статусів.
+
+    Токен підставляється в сам скрипт: інакше користувачеві довелося б копіювати
+    його руками, а крок, який легко зробити неправильно, зрештою зроблять
+    неправильно. Сторінка доступна лише локально, тож токен не виходить за
+    межі машини.
+    """
+    cfg = get_settings()
+    js = (BASE_DIR / "static" / "collect.js").read_text(encoding="utf-8")
+    js = (js.replace("__API__", str(request.base_url).rstrip("/"))
+            .replace("__TOKEN__", cfg.sync_token)
+            .replace("__SOURCE__", "djinni"))
+    minified = " ".join(line.strip() for line in js.splitlines()
+                        if line.strip() and not line.strip().startswith("//"))
+    return templates.TemplateResponse(request, "sync.html", {
+        "snippet": js,
+        "bookmarklet": "javascript:" + quote(minified, safe=""),
+        "token_set": bool(cfg.sync_token),
+    })
 
 
 @app.get("/funnel", response_class=HTMLResponse)

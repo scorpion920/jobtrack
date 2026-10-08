@@ -32,6 +32,7 @@
   form.add { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr));
              gap:8px; margin:0 0 26px; padding:14px; border:1px solid var(--line);
              border-radius:8px; }
+  textarea { width:100%; resize:vertical; }
   input,select,textarea,button { font:inherit; padding:7px 9px; border:1px solid var(--line);
              border-radius:6px; background:var(--bg); color:var(--ink); width:100%; }
   button { background:var(--accent); color:#fff; border-color:var(--accent);
@@ -47,6 +48,7 @@
   <nav>
     <a href="/">Подачі</a>
     <a href="/funnel">Воронка</a>
+    <a href="/sync">Синхронізація</a>
     <a href="/docs">API</a>
   </nav>
   {% block body %}{% endblock %}
