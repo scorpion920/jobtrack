@@ -31,6 +31,7 @@ from sqlalchemy import select
 from app.alerts import (ApplicationBrief, VacancyBrief, silence_alerts,
                         unsent, vacancy_alerts)
 from app.collect import collect
+from app.dedup import Publication, find_reposts
 from app.db import get_sessionmaker
 from app.models import Application, SourceConfig, Vacancy
 from app.notify import NotConfigured, already_sent, deliver
@@ -71,9 +72,19 @@ async def announce_new(session) -> None:
         )).scalars()
     }
 
+    # Перевипуск не дає другого сповіщення: це та сама вакансія, яку
+    # майданчик опублікував удруге. У переліку старішу видно (на неї могло
+    # бути подано), а повідомляти про неї означало б слати дублікат.
+    reposts = find_reposts([
+        Publication(url=v.url, source_key=v.source_key,
+                    company_norm=v.company_norm, title_norm=v.title_norm,
+                    posted_at=v.posted_at)
+        for v in vacancies
+    ])
+
     briefs = []
     for v in vacancies:
-        if v.id in applied:
+        if v.id in applied or v.url in reposts:
             continue
         verdict = assess(format=v.format, years_required=v.years_required,
                          english=v.english, location=v.location)

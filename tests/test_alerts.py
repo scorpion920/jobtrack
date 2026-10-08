@@ -98,3 +98,30 @@ def test_bot_token_never_reaches_the_error_log():
     assert "ТОКЕН ПРИХОВАНО" in text
     # Діагностична цінність зберігається.
     assert "400" in text
+
+
+def test_repost_does_not_produce_a_second_alert():
+    """Office.kh.ua «Python Developer (Django)» опублікована двічі.
+
+    Знайдено перед першою реальною відправкою 08.10.2026: у сповіщення йшли
+    обидві публікації. У переліку старішу видно — на неї могло бути подано, —
+    але повідомляти про неї означало б слати дублікат.
+
+    Перевіряємо сам інваріант: вакансії, позначені перевипуском, до правил
+    сповіщень не доходять.
+    """
+    from datetime import datetime
+
+    from app.dedup import Publication, find_reposts
+
+    old = Publication("https://x/old", "djinni", "office kh ua",
+                      "python developer django", datetime(2026, 9, 27))
+    new = Publication("https://x/new", "djinni", "office kh ua",
+                      "python developer django", datetime(2026, 10, 8))
+    reposts = find_reposts([old, new])
+
+    briefs = [_v(id=1, url="https://x/old"), _v(id=2, url="https://x/new")]
+    kept = [b for b in briefs if b.url not in reposts]
+    alerts = vacancy_alerts(kept)
+    assert len(alerts) == 1
+    assert alerts[0].key == "vacancy:2"
