@@ -40,25 +40,29 @@ def test_callback_payload_is_parsed_strictly():
         assert not (action in {"applied", "skip"} and raw.isdigit()), bad
 
 
-def test_only_the_pressed_row_is_marked():
-    """У зведенні рядок на вакансію, і дія стосується однієї з них.
+def test_confirmation_is_written_into_the_message_not_popped_up():
+    """Позначка редагує ТЕКСТ повідомлення, а не спливає над кнопкою.
 
-    Замінити всю клавіатуру одним підтвердженням означало б відібрати
-    можливість відреагувати на решту — а саме заради цього зведення й існує.
+    `answerCallbackQuery` зникає з очей і ще й застаріває: Telegram дає на
+    відповідь близько п'ятнадцяти секунд, а опитування йде з інтервалом.
+    Перевірено 08.10.2026 — підтвердження не з'являлось узагалі, хоча дія
+    спрацьовувала.
+
+    Текст із розміткою беремо з журналу сповіщень, а не з
+    `query.message.text`: останній приходить без HTML, і редагування з'їло б
+    жирний шрифт.
     """
-    from app.bot_actions import _mark_row
+    import inspect
 
-    keyboard = [
-        [{"text": "1 ✅ подав", "callback_data": "applied:10"},
-         {"text": "1 🚫 нецікаво", "callback_data": "skip:10"}],
-        [{"text": "2 ✅ подав", "callback_data": "applied:20"},
-         {"text": "2 🚫 нецікаво", "callback_data": "skip:20"}],
-    ]
-    result = _mark_row(keyboard, "skip:10", "🚫 приховано: Acme")["inline_keyboard"]
+    from app import bot_actions
 
-    assert len(result[0]) == 1 and result[0][0]["callback_data"] == "done"
-    assert result[0][0]["text"].startswith("1 ")      # номер позиції зберігся
-    assert result[1] == keyboard[1]                   # друга лишилась робочою
+    source = inspect.getsource(bot_actions._mark_message)
+    assert "editMessageText" in source
+    assert "parse_mode" in source
+    # Кнопки прибираються: друге натискання лише повідомило б «вже записано».
+    assert '"inline_keyboard": []' in source
+    # Текст береться з журналу, бо в повідомленні він без розмітки.
+    assert "Notification" in source
 
 
 def test_stranger_cannot_act():

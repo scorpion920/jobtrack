@@ -25,7 +25,8 @@ from datetime import date
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import Application, ApplicationEvent, BotState, Channel, Status, Vacancy
+from app.models import (Application, ApplicationEvent, BotState, Channel,
+                        Notification, Status, Vacancy)
 from app.config import get_settings
 from app.notify import NotConfigured, _safe, call
 
@@ -107,27 +108,42 @@ def _is_owner(query: dict) -> bool:
     return not chat or chat == allowed
 
 
-def _mark_row(keyboard: list[list[dict]], payload: str, answer: str) -> dict:
-    """Позначити рядок, по якому натиснули, лишивши решту робочими.
+async def _mark_message(session: AsyncSession, query: dict, key: str,
+                        answer: str) -> None:
+    """Показати в САМОМУ повідомленні, що дію виконано.
 
-    У зведенні рядок на вакансію, і дія стосується ОДНІЄЇ з них. Замінити
-    всю клавіатуру одним підтвердженням означало б відібрати можливість
-    відреагувати на решту — а саме заради цього зведення й існує.
+    Редагуємо текст, а не клавіатуру. Три причини:
+
+    * `answerCallbackQuery` спливає і зникає, а при опитуванні з інтервалом
+      ще й застаріває — Telegram дає на відповідь близько п'ятнадцяти секунд;
+    * позначка в тексті лишається в історії каналу: через тиждень видно, на
+      що вже відреаговано;
+    * текст із розміткою в нас уже збережений — у журналі сповіщень, — тож
+      нічого відновлювати не треба. `query.message.text` для цього не
+      годиться: він приходить без HTML, і редагування з'їло б жирний шрифт.
     """
-    _, _, vacancy_id = payload.partition(":")
-    rows: list[list[dict]] = []
-    for row in keyboard:
-        mine = any(str(b.get("callback_data", "")).endswith(f":{vacancy_id}")
-                   for b in row)
-        if mine:
-            # Номер позиції беремо з підпису кнопки, щоб позначка лишалась
-            # прив'язаною до рядка в тексті.
-            number = (row[0].get("text", "") or "").split(" ")[0]
-            rows.append([{"text": f"{number} {answer[:48]}",
-                          "callback_data": "done"}])
-        else:
-            rows.append(row)
-    return {"inline_keyboard": rows}
+    message = query.get("message") or {}
+    if not message.get("message_id"):
+        return
+
+    row = (await session.execute(
+        select(Notification).where(Notification.key == key)
+    )).scalars().first()
+    original = row.text if row else (message.get("text") or "")
+
+    try:
+        await call("editMessageText", {
+            "chat_id": message["chat"]["id"],
+            "message_id": message["message_id"],
+            "text": f"<b>{answer}</b>\n\n{original}",
+            "parse_mode": "HTML",
+            "disable_web_page_preview": True,
+            # Кнопки прибираємо: дію вже виконано, і друге натискання лише
+            # повідомило б «вже записано раніше».
+            "reply_markup": {"inline_keyboard": []},
+        })
+    except Exception as exc:                      # noqa: BLE001
+        log.warning("не вдалось позначити повідомлення: %s", _safe(exc))
 
 
 async def poll(session: AsyncSession) -> int:
@@ -177,18 +193,7 @@ async def poll(session: AsyncSession) -> int:
         #
         # Позначка в повідомленні ще й корисніша: вона лишається в історії
         # каналу, тож видно, на що вже відреаговано, навіть через тиждень.
-        message = query.get("message") or {}
-        if message.get("message_id"):
-            try:
-                await call("editMessageReplyMarkup", {
-                    "chat_id": message["chat"]["id"],
-                    "message_id": message["message_id"],
-                    "reply_markup": _mark_row(
-                        (message.get("reply_markup") or {}).get("inline_keyboard", []),
-                        payload, answer),
-                })
-            except Exception as exc:              # noqa: BLE001
-                log.warning("не вдалось позначити повідомлення: %s", _safe(exc))
+        await _mark_message(session, query, f"vacancy:{raw_id}", answer)
 
         # Спливаюче підтвердження лишається спробою: коли натискання
         # опрацьовується швидко, воно приємніше за редагування.

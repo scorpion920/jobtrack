@@ -55,7 +55,15 @@ async def call(method: str, payload: dict) -> dict:
     async with httpx.AsyncClient(timeout=30.0) as client:
         response = await client.post(
             API.format(token=cfg.telegram_bot_token, method=method), json=payload)
-        response.raise_for_status()
+        if response.status_code >= 400:
+            # Telegram пояснює відмову в тілі відповіді, а `raise_for_status`
+            # цього не показує — лишається голий «400 Bad Request», по якому
+            # неможливо зрозуміти, що саме не так. Беремо опис.
+            try:
+                why = response.json().get("description", "")
+            except Exception:                     # noqa: BLE001
+                why = response.text[:200]
+            raise RuntimeError(f"{method}: {response.status_code} {why}")
         return response.json()
 
 
