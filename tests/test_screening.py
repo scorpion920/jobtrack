@@ -202,3 +202,34 @@ def test_one_or_two_years_is_not_a_threshold():
                  "Досвід DS/MLE від 1 року"):
         concerns = screen(text, "Python Developer").concerns
         assert not any("років досвіду" in c for c in concerns), text
+
+
+def test_screening_is_linear_on_hostile_input():
+    """Сторож проти ReDoS. Текст вакансії приходить із чужого майданчика.
+
+    Перша редакція правила про роки мала три `\\s*` поспіль, і рушій
+    перебирав усі способи розділити між ними пробіли. Вимір 08.10.2026:
+    200 пробілів — 25 мс, 400 — 190 мс, 800 — 1,5 с, 1600 — 12 с. Подвоєння
+    входу давало ріст у вісім разів, тож одного оголошення з довгим рядком
+    пробілів вистачило б, щоб підвісити збір.
+
+    Поріг у тесті з великим запасом: після виправлення 20 000 пробілів
+    опрацьовуються за частки мілісекунди.
+    """
+    import time
+
+    hostile = "3" + " " * 20000 + "x " + "a" * 5000 + " " * 10000 + "років"
+    start = time.perf_counter()
+    screen(hostile, "Python Developer")
+    assert time.perf_counter() - start < 1.0
+
+
+def test_threshold_rule_still_works_after_bounding():
+    """Межі на повтореннях не змінили того, що правило ловить."""
+    assert any("3+ років" in c
+               for c in screen("3–5 years of professional experience",
+                               "Python Developer").concerns)
+    assert any("3+ років" in c
+               for c in screen("5+ years of experience", "Python Developer").concerns)
+    assert not any("3+ років" in c
+                   for c in screen("1 рік досвіду", "Python Developer").concerns)
