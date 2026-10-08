@@ -188,3 +188,34 @@ class TestCvVersionCarriesThrough:
         plan = plan_sync([SyncItem(company="X", position="Dev")], [], {},
                          date(2026, 10, 8))
         assert plan.create[0].cv_version is None
+
+
+class TestFillEmptyNeverOverwrite:
+    """Правило злиття: доповнюємо порожнє, не затираємо заповнене.
+
+    Знадобилось одразу: перший прогін DOU не зчитав імені файлу резюме через
+    хибно визначений контейнер рядка. Без цього правила виправлення збирача
+    нічого б не дало — 17 зіставлених подач лишились би назавжди без версії,
+    бо зіставлення саме по собі полів не оновлює.
+    """
+
+    TODAY = date(2026, 10, 8)
+
+    def test_missing_version_is_filled_on_match(self):
+        cands = [Candidate(7, "X", "Dev", "https://a.io/1", None)]
+        plan = plan_sync([SyncItem(company="X", position="Dev", url="https://a.io/1",
+                                   cv_version="CV_X")], cands, {}, self.TODAY)
+        assert plan.fill_cv == {7: "CV_X"}
+
+    def test_existing_version_is_never_overwritten(self):
+        """Інакше повторна синхронізація з гіршого джерела псувала б дані."""
+        cands = [Candidate(7, "X", "Dev", "https://a.io/1", "CV_OLD")]
+        plan = plan_sync([SyncItem(company="X", position="Dev", url="https://a.io/1",
+                                   cv_version="CV_NEW")], cands, {}, self.TODAY)
+        assert plan.fill_cv == {}
+
+    def test_nothing_to_fill_when_item_has_no_version(self):
+        cands = [Candidate(7, "X", "Dev", "https://a.io/1", None)]
+        plan = plan_sync([SyncItem(company="X", position="Dev", url="https://a.io/1")],
+                         cands, {}, self.TODAY)
+        assert plan.fill_cv == {}

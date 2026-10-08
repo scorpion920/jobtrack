@@ -83,6 +83,7 @@ class Candidate:
     company: str
     position: str
     url: str | None
+    cv_version: str | None = None
 
 
 def find_match(item: SyncItem, candidates: list[Candidate]) -> Candidate | None:
@@ -153,10 +154,14 @@ class SyncPlan:
     events: list[PlannedEvent]
     matched: int = 0
     ambiguous: list[str] = None  # type: ignore[assignment]
+    # id подачі → версія резюме, якої їй бракувало.
+    fill_cv: dict[int, str] = None  # type: ignore[assignment]
 
     def __post_init__(self) -> None:
         if self.ambiguous is None:
             self.ambiguous = []
+        if self.fill_cv is None:
+            self.fill_cv = {}
 
 
 def plan_sync(
@@ -181,6 +186,12 @@ def plan_sync(
         if hit is not None:
             plan.matched += 1
             app_id = hit.id
+            # Доповнюємо ПОРОЖНЄ, але ніколи не затираємо заповнене.
+            # Перший прогін DOU не зчитав імені файлу резюме через хибний
+            # контейнер; без цього правила виправлення збирача нічого б не
+            # дало — зіставлені рядки лишились би назавжди без версії.
+            if item.cv_version and not hit.cv_version:
+                plan.fill_cv[hit.id] = item.cv_version
         else:
             same_company = [c for c in pool
                             if normalize_name(c.company) == normalize_name(item.company)]

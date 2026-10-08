@@ -81,7 +81,8 @@ async def sync(payload: SyncIn,
     # поки сесія ще жива і зв'язки завантажені. Далі ORM не торкаємось:
     # саме звернення до `.events` на щойно створеному об'єкті давало
     # MissingGreenlet.
-    candidates = [Candidate(a.id, a.company, a.position, a.url) for a in existing]
+    candidates = [Candidate(a.id, a.company, a.position, a.url, a.cv_version)
+                  for a in existing]
     known: dict[int, set[tuple[str, date]]] = {
         a.id: {(e.status.value, e.occurred_on) for e in a.events} for a in existing
     }
@@ -122,6 +123,10 @@ async def sync(payload: SyncIn,
         session.add(obj)
         await session.flush()
         created_ids[planned.item_index] = obj.id
+
+    by_id = {a.id: a for a in existing}
+    for app_id, version in plan.fill_cv.items():
+        by_id[app_id].cv_version = version
 
     for event in plan.events:
         app_id = event.application_id

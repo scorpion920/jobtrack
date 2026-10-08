@@ -33,14 +33,24 @@
   }
 
   function rowFor(node) {
-    // Піднімаємось, доки контейнер не почне містити і дату, і посилання
-    // на вакансію — тобто стане повним записом.
-    var el = node, up = 0;
-    while (el.parentElement && up < 6) {
+    /* Піднімаємось, доки контейнер не стане ПОВНИМ записом.
+     *
+     * Перша редакція зупинялась на першому ж контейнері з посиланням на
+     * вакансію — а ним виявився заголовок. Рядок «Резюме: …pdf» лежить
+     * нижче, поза ним, тому ім'я файлу резюме не зчиталось у ЖОДНОМУ з
+     * 17 записів. Збій тихий: усі поля заповнені, бракує лише одного —
+     * того самого, заради якого воронка вміє порівнювати версії.
+     *
+     * Тому ознака повноти тепер подвійна: і посилання на вакансію, і
+     * згадка резюме. */
+    var el = node, up = 0, fallback = null;
+    while (el.parentElement && up < 8) {
       el = el.parentElement; up++;
-      if (el.querySelector('a[href*="/vacancies/"], a[href*="/companies/"]')) return el;
+      var hasJob = el.querySelector('a[href*="/vacancies/"], a[href*="/companies/"]');
+      if (hasJob && !fallback) fallback = el;
+      if (hasJob && /Резюме|\.pdf/i.test(el.textContent || "")) return el;
     }
-    return null;
+    return fallback;
   }
 
   function collect() {
