@@ -100,3 +100,27 @@ def test_hashtag_line_is_not_a_title():
     assert _first_line("#Python #Middle #remote\nPython Developer") == \
         "Python Developer"
     assert _first_line("@channel_name\nВакансія тижня") == "Вакансія тижня"
+
+
+def test_login_script_refuses_a_bot_token():
+    """`client.start()` питає «phone (or bot token)» і приймає обидва.
+
+    09.10.2026 так і сталося: у сесію увійшов бот, а бот не може читати
+    канали взагалі («BotMethodInvalidError: The API access for bot users is
+    restricted»). Найгірше було не це, а відстань: помилка випливла аж на
+    зборі вакансій, за кілька кроків від причини, і виглядала як вада
+    адаптера.
+
+    Тому вхід перевіряє формат НА ВХОДІ й звіряє результат: `me.bot` після
+    успішного входу означає, що сесія ні на що не годиться.
+    """
+    import inspect
+
+    from app import scripts_tg_login
+
+    source = inspect.getsource(scripts_tg_login.main)
+    # Номер запитуємо самі, а не віддаємо telethon на відкуп.
+    assert 'client.start(phone=' in source
+    assert '":" in phone' in source
+    # І звіряємо, хто насправді увійшов.
+    assert "me.bot" in source
