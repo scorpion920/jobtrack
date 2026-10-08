@@ -14,7 +14,7 @@ from urllib.parse import quote
 
 from datetime import date
 
-from fastapi import Depends, FastAPI, Form, Request
+from fastapi import Depends, FastAPI, Form, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi import Response
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -29,6 +29,7 @@ from app.api.vacancies import router as vacancies_router
 from app.collect import collect
 from app.scheduler import build as build_scheduler
 from app.dedup import Publication, find_reposts
+from app.draft import prepare as prepare_draft
 from app.linking import vacancy_key
 from app.screen import Candidate, assess, find_alternative
 from app.screening import screen as screen_text
@@ -333,6 +334,34 @@ async def vacancies_collect(key: str, session: AsyncSession = Depends(get_sessio
     note = (f"{key}: знайдено {report.found}, нових {report.created}, "
             f"оновлено {report.refreshed}") if report.ok else f"{key}: {report.error}"
     return RedirectResponse(f"/vacancies?message={quote(note)}", status_code=303)
+
+
+@app.get("/vacancies/{vacancy_id}/draft", response_class=HTMLResponse)
+async def vacancy_draft(request: Request, vacancy_id: int,
+                        session: AsyncSession = Depends(get_session)):
+    """Що взяти й про що писати перед подачею.
+
+    Три кроки з чотирьох механічні: який трек резюме, якою мовою лист, які
+    збіги назвати. Четвертий — сам текст — лишається людині: перетворити
+    каркас на звернення до конкретної компанії без розуміння, чому саме
+    туди, неможливо, і підробляти це не варто.
+    """
+    vacancy = (await session.execute(
+        select(Vacancy).where(Vacancy.id == vacancy_id)
+    )).scalar_one_or_none()
+    if not vacancy:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "вакансії немає")
+
+    content = screen_text(vacancy.raw_text, vacancy.title)
+    verdict = assess(format=vacancy.format, years_required=vacancy.years_required,
+                     english=vacancy.english, location=vacancy.location)
+    draft = prepare_draft(title=vacancy.title, raw_text=vacancy.raw_text,
+                          matched=content.matched, gaps=content.gaps,
+                          replies=vacancy.replies, english=vacancy.english)
+
+    return templates.TemplateResponse(request, "draft.html", {
+        "v": vacancy, "draft": draft, "verdict": verdict,
+    })
 
 
 @app.get("/funnel", response_class=HTMLResponse)

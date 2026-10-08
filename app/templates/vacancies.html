@@ -47,7 +47,10 @@
     <td class="sub">{{ v.posted_at.strftime('%d.%m') if v.posted_at else '—' }}</td>
     <td class="sub">{{ v.source_key }}</td>
     <td>
-      <a href="{{ v.url }}" target="_blank" rel="noopener">{{ v.title }}</a><br>
+      <a href="{{ v.url }}" target="_blank" rel="noopener">{{ v.title }}</a>
+      {% if v.state != 'blocked' and not v.applied_on %}
+        <a href="/vacancies/{{ v.id }}/draft" class="sub" style="margin-left:6px">чернетка →</a>
+      {% endif %}<br>
       <span class="sub">{{ v.company }}{% if v.location %} · {{ v.location }}{% endif %}</span>
       {% if v.applied_on %}<br><span class="pill s-viewed">подано {{ v.applied_on.strftime('%d.%m') }}</span>{% endif %}
       {% if v.repost_of %}<br><span class="sub" style="color:#b45309">перевипуск —

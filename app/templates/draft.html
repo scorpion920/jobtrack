@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block title %}Чернетка — {{ v.company }}{% endblock %}
+{% block body %}
+<h1>{{ v.title }}</h1>
+<p class="sub"><strong>{{ v.company }}</strong>{% if v.location %} · {{ v.location }}{% endif %}
+  · <a href="{{ v.url }}" target="_blank" rel="noopener">відкрити на {{ v.source_key }}</a></p>
+
+{% if verdict.blocked %}
+<p class="sub" style="color:#b45309"><strong>Подача заблокована:</strong> {{ verdict.reason }}.
+Нижче лишено на випадок, якщо умови зміняться.</p>
+{% endif %}
+
+<h2 style="font-size:15px;margin-top:22px">Що взяти</h2>
+<table style="margin-bottom:18px">
+  <tr><td style="width:140px">Резюме</td><td><code>{{ draft.cv_file }}</code>
+    <span class="sub">(трек {{ draft.track }})</span></td></tr>
+  <tr><td>Мова листа</td><td>{% if draft.language == 'en' %}<strong>англійська</strong>
+    <span class="sub">— опис вакансії англійською</span>{% else %}українська{% endif %}</td></tr>
+  <tr><td>Конкуренція</td><td>{% if v.replies is not none %}{{ v.replies }} відгуків{%
+    else %}<span class="sub">майданчик не повідомляє</span>{% endif %}</td></tr>
+</table>
+
+{% if draft.notes %}
+<h2 style="font-size:15px">На що зважити</h2>
+<ul class="sub" style="line-height:1.8">
+  {% for n in draft.notes %}<li>{{ n }}</li>{% endfor %}
+</ul>
+{% endif %}
+
+<h2 style="font-size:15px;margin-top:22px">Про що писати</h2>
+<p class="sub">Збіги за спаданням ваги — перші два-три варті окремого речення
+з прикладом, решта згадуються переліком.</p>
+<ul class="sub" style="line-height:1.8">
+  {% for s in draft.strengths %}<li>{{ s }}</li>{% endfor %}
+</ul>
+
+{% if draft.gaps %}
+<h2 style="font-size:15px;margin-top:22px">Назвати прямо</h2>
+<p class="sub">Прогалина, названа самим кандидатом разом із заміною, читається
+інакше, ніж виявлена на співбесіді.</p>
+<ul class="sub" style="line-height:1.8">
+  {% for g in draft.gaps %}<li>{{ g }}</li>{% endfor %}
+</ul>
+{% endif %}
+
+<p class="sub" style="margin-top:24px">Сам текст листа система не пише: перетворити
+це на звернення до конкретної компанії без розуміння, чому саме туди, неможливо.</p>
+{% endblock %}
