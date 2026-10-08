@@ -19,8 +19,22 @@ class Settings(BaseSettings):
     # власник сайту має мати можливість зв'язатися, а не просто заблокувати.
     scraper_contact: str = ""
 
+    # Сторінки, з яких браузер має право звертатися до цього API.
+    # Саме з них виконується скрипт збору статусів, і без цього дозволу
+    # браузер ріже запит передпольотною перевіркою (CORS), навіть якщо
+    # токен правильний.
+    #
+    # Список, а не "*": зірочка дозволила б будь-якій відкритій сторінці
+    # стукати в локальний сервіс. Токен це зупинив би, але покладатися на
+    # один рубіж там, де дешево мати два, не варто.
+    cors_origins: str = "https://djinni.co,https://jobs.dou.ua,https://www.linkedin.com"
+
     telegram_bot_token: str = ""
     telegram_chat_id: str = ""
+
+    @property
+    def cors_origin_list(self) -> list[str]:
+        return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
 
     @property
     def user_agent(self) -> str:

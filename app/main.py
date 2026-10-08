@@ -12,6 +12,7 @@ from urllib.parse import quote
 from datetime import date
 
 from fastapi import Depends, FastAPI, Form, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import select
@@ -30,6 +31,20 @@ templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 
 app = FastAPI(title="jobtrack", version="0.1.0",
               description="Журнал подач і моніторинг вакансій")
+# Скрипт збору статусів виконується НА сторінці майданчика (djinni.co), а
+# звертається сюди. Для браузера це міждоменний запит із власним заголовком
+# `X-Sync-Token`, тож він спершу шле передпольотний OPTIONS — і без дозволу
+# ріже все, навіть не дійшовши до перевірки токена.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=get_settings().cors_origin_list,
+    allow_methods=["POST", "OPTIONS"],
+    allow_headers=["Content-Type", "X-Sync-Token"],
+    # Куки не передаємо: автентифікація йде заголовком із токеном, тому
+    # дозволяти облікові дані немає потреби.
+    allow_credentials=False,
+)
+
 app.include_router(applications_router)
 app.include_router(sync_router)
 
