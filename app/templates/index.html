@@ -2,8 +2,26 @@
 {% block title %}Подачі — jobtrack{% endblock %}
 {% block body %}
 <h1>Журнал подач</h1>
-<p class="sub">Усього записів: {{ applications|length }}. Подача без запису не існує —
-саме тому форма стоїть першою, а не внизу сторінки.</p>
+<p class="sub">Подача без запису не існує — саме тому форма стоїть першою, а не
+внизу сторінки.</p>
+
+<nav class="slices">
+  <a href="/?show=all" {% if show == "all" %}class="on"{% endif %}>Усі
+    <b>{{ counts.all }}</b></a>
+  <a href="/?show=answered" {% if show == "answered" %}class="on"{% endif %}>Відповіли
+    <b>{{ counts.answered }}</b></a>
+  <a href="/?show=silent" {% if show == "silent" %}class="on"{% endif %}>Тиша
+    <b>{{ counts.silent }}</b></a>
+  <a href="/?show=blind" {% if show == "blind" %}class="on"{% endif %}>Канал не звітує
+    <b>{{ counts.blind }}</b></a>
+</nav>
+<p class="sub" style="margin-top:-6px">
+  {% if show == "blind" %}DOU не показує стану відгуку взагалі — лише факт подачі.
+  Тиша тут нічого не означає, тому й не рахується.
+  {% elif show == "silent" %}Подачі, де канал уміє звітувати, але відповіді немає.
+  Саме ці числа й вимірюють воронку.
+  {% elif show == "answered" %}Усе, що отримало хоч якусь реакцію. Автовідповіді
+  сюди не входять.{% endif %}</p>
 
 <form class="add" method="post" action="/ui/applications">
   <div><label>Компанія</label><input name="company" required></div>
@@ -18,7 +36,8 @@
 </form>
 
 {% if not applications %}
-  <p class="empty">Ще жодного запису. Перший крок — внести те, що вже надсилали.</p>
+  <p class="empty">{% if show == "all" %}Ще жодного запису. Перший крок — внести те,
+    що вже надсилали.{% else %}У цьому зрізі порожньо.{% endif %}</p>
 {% else %}
 <table>
   <thead><tr>
@@ -36,7 +55,8 @@
       <td class="hide-sm">{{ a.channel.value }}</td>
       <td class="hide-sm">{{ a.cv_version or "—" }}</td>
       <td><span class="pill s-{{ a.current_status.value }}">{{ a.current_status.value }}</span></td>
-      <td class="num {% if a.days_silent and a.days_silent > 10 %}silent{% endif %}">
+      <td class="num {% if a.days_silent and a.days_silent > 10 %}silent{% endif %}"
+          {% if a.days_silent is none %}title="Канал не звітує про стан відгуку — тиша тут неінформативна"{% endif %}>
         {{ a.days_silent if a.days_silent is not none else "—" }}</td>
     </tr>
   {% endfor %}

@@ -63,12 +63,32 @@ async def _all(session: AsyncSession) -> list[Application]:
 
 
 @app.get("/", response_class=HTMLResponse)
-async def index(request: Request, session: AsyncSession = Depends(get_session)):
+async def index(request: Request, show: str = "all",
+                session: AsyncSession = Depends(get_session)):
+    """Журнал подач.
+
+    `show` — зріз, бо хронологія ховає найцінніше: усе, що має стан, старе, а
+    все нове за визначенням «надіслано». Щоб побачити результати, доводилось
+    гортати повз два десятки рядків, які нічого не кажуть.
+    """
     apps = await _all(session)
+
+    answered = [a for a in apps if a.current_status is not Status.sent]
+    # «Тихі» — лише там, де тиша взагалі щось означає: канал, який не звітує,
+    # мовчить не тому, що про вас забули.
+    silent = [a for a in apps
+              if a.current_status is Status.sent and a.silence_is_meaningful]
+    blind = [a for a in apps if not a.silence_is_meaningful]
+
+    shown = {"answered": answered, "silent": silent, "blind": blind}.get(show, apps)
+
     return templates.TemplateResponse(request, "index.html", {
-        "applications": apps,
+        "applications": shown,
         "channels": list(Channel),
         "statuses": list(Status),
+        "show": show,
+        "counts": {"all": len(apps), "answered": len(answered),
+                   "silent": len(silent), "blind": len(blind)},
     })
 
 

@@ -53,7 +53,7 @@
 
   function statusFrom(blob) {
     if (AUTO.test(blob))
-      return { s: null, why: "автовідповідь — не доказ перегляду" };
+      return { s: "auto_reply", why: "автовідповідь — не доказ перегляду" };
     if (/ваш відгук на цю позицію відхилено|відхилено|відмовл/i.test(blob))
       return { s: "rejected", why: "відмова" };
     if (/призупиня|призупинил|пауз|вакансію закрит|позицію закрит/i.test(blob))

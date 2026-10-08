@@ -122,3 +122,45 @@ class TestAutoReplyIsNotEvidence:
               / "collect.js").read_text(encoding="utf-8")
         assert "автоматична відповідь" in js, "збирач не розпізнає автовідповіді"
         assert "AUTO.test(blob)" in js, "перевірка AUTO не застосовується"
+
+
+class TestAutoReplyIsItsOwnState:
+    """Автовідповідь — окремий стан, видимий у журналі й НЕ зарахований у воронці.
+
+    Два простіші рішення обидва були гіршими:
+      • зарахувати як «переглянуто» — воронка рахувала б роботів як людей, і
+        зробила б це непомітно, бо число виросло б, а не впало;
+      • лишити «надіслано» — подія сталася, а журнал показує, ніби нічого.
+    """
+
+    DAY = date(2026, 10, 8)
+
+    def test_auto_reply_is_not_a_view(self):
+        rows = build([make(Channel.djinni, "backend", self.DAY, Status.auto_reply)])
+        assert rows[0].viewed == 0, "автовідповідь не доводить, що хтось дивився"
+        assert rows[0].responded == 0
+
+    def test_auto_reply_still_counts_as_sent(self):
+        rows = build([make(Channel.djinni, "backend", self.DAY, Status.auto_reply)])
+        assert rows[0].sent == 1
+
+    def test_auto_reply_is_visible_as_current_state(self):
+        """У журналі подача має показувати, що реакція була — хай і машинна."""
+        from app.models import Application, ApplicationEvent
+        app = Application(company="X", position="Y", channel=Channel.djinni,
+                          applied_on=self.DAY)
+        app.events = [
+            ApplicationEvent(id=1, status=Status.sent, occurred_on=self.DAY, application_id=0),
+            ApplicationEvent(id=2, status=Status.auto_reply, occurred_on=self.DAY, application_id=0),
+        ]
+        assert app.current_status is Status.auto_reply
+
+    def test_real_reply_beats_auto_reply_on_the_same_day(self):
+        from app.models import Application, ApplicationEvent
+        app = Application(company="X", position="Y", channel=Channel.djinni,
+                          applied_on=self.DAY)
+        app.events = [
+            ApplicationEvent(id=1, status=Status.viewed, occurred_on=self.DAY, application_id=0),
+            ApplicationEvent(id=2, status=Status.auto_reply, occurred_on=self.DAY, application_id=0),
+        ]
+        assert app.current_status is Status.viewed

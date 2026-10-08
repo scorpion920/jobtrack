@@ -15,6 +15,11 @@ from app.schemas import FunnelRow
 
 #  Стани, досягнення яких означає, що рекрутер ПОБАЧИВ подачу. Відмова теж сюди
 #  належить: щоб відмовити, треба спершу прочитати.
+#
+#  `auto_reply` сюди НЕ входить свідомо. Автовідповідь доводить лише те, що лист
+#  дійшов до автоматики. Зарахована як перегляд, вона зробила б неправдивим
+#  єдине число, заради якого ведеться журнал — і зробила б це непомітно, бо
+#  цифра виросла б, а не впала.
 SEEN = {Status.viewed, Status.rejected, Status.invited,
         Status.interview, Status.test_task, Status.offer}
 RESPONDED = {Status.rejected, Status.invited, Status.interview,

@@ -80,3 +80,39 @@ class TestSameDayOrdering:
         app = _app(date(2026, 2, 8), [(Status.viewed, date(2026, 2, 8)),
                                       (Status.sent, date(2026, 2, 8))])
         assert app.current_status is Status.viewed
+
+
+class TestSilenceOnlyWhereChannelSpeaks:
+    """Мовчання мусить означати одне й те саме скрізь, де його рахують.
+
+    DOU не показує стану відгуку взагалі — лише факт подачі. До 08.10 журнал
+    виводив для таких подач «29 днів тиші», і це читалося як ігнорування
+    рекрутером, хоча механізму, який міг би щось повідомити, там просто немає.
+    """
+
+    def test_djinni_silence_is_counted(self):
+        app = _app(date.today() - timedelta(days=10), [])
+        app.channel = Channel.djinni
+        assert app.days_silent == 10
+
+    def test_dou_silence_is_not_counted(self):
+        app = _app(date.today() - timedelta(days=29), [])
+        app.channel = Channel.dou
+        assert app.days_silent is None, "DOU статусів не звітує — тиша неінформативна"
+
+    def test_dou_with_manual_feedback_starts_counting(self):
+        """Якщо відповідь надійшла іншим шляхом і внесена руками — зворотний
+        зв'язок звідкись є, і далі тишу вже має сенс рахувати."""
+        app = _app(date.today() - timedelta(days=29),
+                   [(Status.viewed, date.today() - timedelta(days=5))])
+        app.channel = Channel.dou
+        assert app.days_silent == 5
+
+    def test_none_is_not_zero(self):
+        """None означає «питання не має сенсу», а не «нуль днів».
+        Сплутати їх — зіпсувати саме те число, заради якого ведеться журнал."""
+        app = _app(date.today(), [])
+        app.channel = Channel.dou
+        assert app.days_silent is None
+        app.channel = Channel.djinni
+        assert app.days_silent == 0
