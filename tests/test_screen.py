@@ -132,3 +132,18 @@ def test_suitable_vacancy_gets_no_alternative():
     a = _c("https://x/1")
     b = _c("https://x/2", title="junior data engineer 6 month engagement 5893")
     assert find_alternative(a, [a, b]) is None
+
+
+def test_hybrid_does_not_satisfy_remote_only():
+    """Гібрид — теж присутність в офісі, просто рідша.
+
+    Знайдено на Intellica Consulting 08.10.2026: «Гібридний формат роботи»
+    проходив як придатний, бо блокувався лише явний «Тільки офіс». Умова
+    власника «тільки віддалено» незмінна з 08.10.2026.
+    """
+    v = assess(format="hybrid", years_required=1, english="b1")
+    assert v.blocked and v.reason == "гібридний формат"
+
+
+def test_remote_still_passes():
+    assert assess(format="remote", years_required=1, english="b1").state == "ok"

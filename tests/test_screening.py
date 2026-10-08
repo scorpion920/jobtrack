@@ -158,3 +158,25 @@ def test_other_professions_are_recognised_by_title():
 def test_title_is_optional():
     """Без назви модуль працює як раніше — канал може її не дати."""
     assert screen("Python, FastAPI, PostgreSQL, Docker, Celery, ETL").fit == "strong"
+
+
+def test_single_mention_of_a_vendor_platform_is_not_a_stop():
+    """«PostgreSQL або Oracle» — звичайний рядок вимог, де друга СУБД опційна."""
+    m = screen("Досвід роботи з PostgreSQL або Oracle. Python, FastAPI, Docker, ETL",
+               "Python Developer")
+    assert not any("Oracle" in c for c in m.concerns)
+
+
+def test_vacancy_built_around_a_vendor_platform_is_a_stop():
+    """Intellica Consulting, 08.10.2026.
+
+    Djinni показував заголовок «Junior Data Platform Engineer», а в тексті
+    вакансія називається «Junior Oracle Platform Engineer» і згадує Oracle
+    ШІСТЬ разів. Заголовок приховував суть — саме тому рахується текст.
+    """
+    text = """Запрошуємо Junior Oracle Platform Engineer. Робота з
+    корпоративними платформами на базі Oracle Technologies. Oracle Database,
+    Oracle Cloud, сертифікація Oracle. Python, SQL."""
+    m = screen(text, "Junior Data Platform Engineer")
+    assert m.fit == "weak"
+    assert any("Oracle" in c for c in m.concerns)

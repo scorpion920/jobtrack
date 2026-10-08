@@ -80,8 +80,11 @@ def assess(*, format: str | None, years_required: int | None, english: str | Non
     reasons: list[str] = []
     unchecked: list[str] = []
 
-    if profile.remote_only and format == "office":
-        reasons.append("тільки офіс")
+    if profile.remote_only and format in {"office", "hybrid"}:
+        # Гібрид — теж присутність в офісі, просто рідша. Умова власника
+        # «тільки віддалено» незмінна, і пом'якшувати її тут означало б
+        # готувати листи під вакансії, які він не візьме.
+        reasons.append("тільки офіс" if format == "office" else "гібридний формат")
     elif profile.remote_only and format is None:
         unchecked.append("формат")
 

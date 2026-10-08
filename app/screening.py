@@ -135,6 +135,34 @@ TITLE_STOP_PATTERNS: tuple[tuple[str, str], ...] = (
 )
 
 
+#  ВЕНДОРСЬКІ ПЛАТФОРМИ, яких власник не знає. Ключ — як рахувати згадки.
+#
+#  Одна згадка нічого не означає: «PostgreSQL або Oracle» — звичайний рядок
+#  вимог, де друга СУБД опційна. Платформа, навколо якої побудована вакансія,
+#  згадується багато разів.
+#
+#  Знайдено 08.10.2026 на Intellica Consulting. Djinni показував заголовок
+#  «Junior Data Platform Engineer», а в тексті вакансія називається
+#  «Junior Oracle Platform Engineer» і згадує Oracle ШІСТЬ разів. Заголовок
+#  приховував суть — саме тому рахувати треба текст, а не назву.
+VENDOR_PLATFORMS: dict[str, str] = {
+    "oracle": "Oracle",
+    "sap": "SAP",
+    "salesforce": "Salesforce",
+    "ms sql": "MS SQL",
+    "mssql": "MS SQL",
+    "sharepoint": "SharePoint",
+    "dynamics": "MS Dynamics",
+    "informatica": "Informatica",
+    "cognos": "Cognos",
+    "teradata": "Teradata",
+}
+
+#  Поріг, за яким згадка стає ядром. Два — бо один раз платформу називають
+#  і в переліках «на вибір», а двічі — коли вона тримає вакансію.
+VENDOR_CORE_MENTIONS = 2
+
+
 @dataclass
 class Match:
     """Оцінка змістовної відповідності."""
@@ -195,6 +223,10 @@ def screen(text: str, title: str | None = None) -> Match:
     # немає. Рахувати їх без Python означало б пропонувати будь-який backend.
     if not has_python:
         result.concerns.append("у тексті немає Python — інша мова позиції")
+
+    for needle, name in VENDOR_PLATFORMS.items():
+        if low.count(needle) >= VENDOR_CORE_MENTIONS:
+            result.concerns.append(f"побудована навколо {name} — стек незнайомий")
 
     for pattern, why in STOP_PATTERNS:
         if why == "основна мова — не Python" and has_python:
