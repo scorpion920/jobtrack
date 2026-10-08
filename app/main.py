@@ -13,6 +13,7 @@ from datetime import date
 
 from fastapi import Depends, FastAPI, Form, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi import Response
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import select
@@ -116,6 +117,22 @@ async def ui_create(
                                  occurred_on=applied_on, origin="manual"))
     await session.commit()
     return RedirectResponse("/", status_code=303)
+
+
+@app.get("/userscript.user.js")
+async def userscript(request: Request):
+    """Userscript для автоматичного збору статусів.
+
+    Розширення на кшталт Tampermonkey впізнають установлюваний скрипт за
+    закінченням `.user.js` і типом `text/javascript`. Токен підставляється
+    сервером: інакше користувачеві довелося б вставляти його руками в код,
+    а крок, який легко зробити неправильно, зрештою зроблять неправильно.
+    """
+    cfg = get_settings()
+    js = (BASE_DIR / "static" / "userscript.js").read_text(encoding="utf-8")
+    js = (js.replace("__API__", str(request.base_url).rstrip("/"))
+            .replace("__TOKEN__", cfg.sync_token))
+    return Response(js, media_type="text/javascript; charset=utf-8")
 
 
 @app.get("/sync", response_class=HTMLResponse)
