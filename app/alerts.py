@@ -106,16 +106,44 @@ def vacancy_alerts(vacancies: list[VacancyBrief]) -> list[Alert]:
     """
     out: list[Alert] = []
     for v in vacancies:
-        if v.state != "ok" or v.fit not in {"strong", "possible"}:
+        if not worth_telling(v):
             continue
         out.append(Alert(key=f"vacancy:{v.id}", text=describe(v)))
     return out
+
+
+def worth_telling(v: VacancyBrief) -> bool:
+    """Чи варта вакансія повідомлення просто зараз.
+
+    Два випадки, і другий додано 09.10.2026 разом із Telegram-каналами.
+
+    * **Умови відомі й проходять** — звичайний випадок майданчиків.
+    * **Умови невідомі, але збіг СИЛЬНИЙ.** Канал не повідомляє ані років,
+      ані англійської, тож кожна його вакансія навіки лишається
+      «потребує перегляду». Вимагати від неї `ok` означало б ніколи не
+      повідомити про жодну — тобто завести вісім каналів і не дізнатися з
+      них нічого.
+
+    Поріг для другого випадку вищий (`strong`, не `possible`) саме тому, що
+    перевірити умови нема чим: платою за сповіщення стає ручний перегляд, і
+    він має окупатися.
+    """
+    if v.fit == "weak":
+        return False
+    if v.state == "ok":
+        return v.fit in {"strong", "possible"}
+    return v.state == "unchecked" and v.fit == "strong"
 
 
 #  Умовні позначки. Один символ на початку рядка дає змогу відрізнити
 #  сильний збіг від імовірного, не читаючи тексту, — а саме так сповіщення
 #  і проглядають: швидко і в черзі з іншими.
 _MARK = {"strong": "🟢", "possible": "🟡"}
+
+#  Окрема позначка для вакансій, умови яких невідомі: вона має читатись
+#  інакше, ніж перевірена, бо вимагає від оператора дії — відкрити й
+#  подивитись самому.
+_MARK_UNCHECKED = "⚪"
 
 _ENGLISH_NOT_NEEDED = "не потрібна"
 
@@ -132,7 +160,8 @@ def describe(v: VacancyBrief) -> str:
     Порядок рядків — за тим, у якому їх читають: спершу що це, далі чи
     візьмуть і наскільки людно, потім чим цікаво, і аж тоді посилання.
     """
-    head = f"{_MARK.get(v.fit, '•')} <b>{esc(v.company)}</b> — {esc(v.title)}"
+    mark = _MARK_UNCHECKED if v.state == "unchecked" else _MARK.get(v.fit, "•")
+    head = f"{mark} <b>{esc(v.company)}</b> — {esc(v.title)}"
 
     terms: list[str] = []
     if v.format:
@@ -161,6 +190,10 @@ def describe(v: VacancyBrief) -> str:
         terms.append(v.posted_on.strftime("%d.%m"))
 
     lines = [head, " · ".join(terms)]
+    if v.state == "unchecked":
+        # Чесно називаємо, чого саме бракує: «невідомо» без пояснення
+        # читається як недогляд системи, а не як властивість джерела.
+        lines.append("умови не вказані — перевірити на сторінці")
 
     if v.matched:
         shown = ", ".join(esc(m) for m in v.matched[:4])

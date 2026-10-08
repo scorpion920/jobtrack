@@ -23,15 +23,16 @@ def test_suitable_vacancy_produces_an_alert():
     assert len(vacancy_alerts([_v()])) == 1
 
 
-def test_unchecked_vacancy_is_not_announced():
-    """DOU не повідомляє ані років, ані англійської.
+def test_weak_and_blocked_are_never_announced():
+    """Поріг лишається вузьким: якби в канал ішло все підряд, його
+    перестали б читати, а з ним і те, що справді варте уваги.
 
-    Якби «потребує перегляду» йшло у сповіщення, канал заповнився б
-    повідомленнями, які нічого не вирішують, і їх перестали б читати.
+    Виняток один і він вузький — сильний збіг при невідомих умовах
+    (Telegram-канали); його перевіряє окремий тест нижче.
     """
-    assert vacancy_alerts([_v(state="unchecked")]) == []
     assert vacancy_alerts([_v(state="blocked")]) == []
     assert vacancy_alerts([_v(fit="weak")]) == []
+    assert vacancy_alerts([_v(state="unchecked", fit="possible")]) == []
 
 
 def test_missing_reply_count_is_said_plainly():
@@ -206,3 +207,37 @@ def test_every_external_field_is_escaped():
     # Шість полів у картці: компанія, посада, формат, англійська, локація,
     # джерело, плюс збіг і адреса — прогалини в компактний формат не входять.
     assert text.count("&lt;i&gt;") == 8 - 1
+
+
+def test_strong_match_without_known_conditions_is_still_told():
+    """Telegram-канал не повідомляє ані років, ані англійської.
+
+    Кожна його вакансія навіки лишається «потребує перегляду». Вимагати від
+    неї `ok` означало б ніколи не повідомити про жодну — тобто завести
+    вісім каналів і не дізнатися з них нічого.
+    """
+    from app.alerts import worth_telling
+
+    assert worth_telling(_v(state="unchecked", fit="strong"))
+    # Поріг вищий саме тому, що перевірити умови нема чим: платою за
+    # сповіщення стає ручний перегляд, і він має окупатися.
+    assert not worth_telling(_v(state="unchecked", fit="possible"))
+    assert not worth_telling(_v(state="unchecked", fit="weak"))
+
+
+def test_blocked_is_never_told_however_strong():
+    from app.alerts import worth_telling
+
+    assert not worth_telling(_v(state="blocked", fit="strong"))
+
+
+def test_unknown_conditions_are_marked_differently():
+    """Позначка має читатись інакше, ніж у перевіреної вакансії: вона
+    вимагає від оператора дії — відкрити й подивитись самому."""
+    from app.alerts import describe
+
+    text = describe(_v(state="unchecked", fit="strong"))
+    assert text.startswith("⚪")
+    assert "умови не вказані" in text
+    # «Невідомо» без пояснення читається як недогляд системи.
+    assert "перевірити на сторінці" in text

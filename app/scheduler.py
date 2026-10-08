@@ -29,7 +29,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from sqlalchemy import select
 
 from app.alerts import (Alert, ApplicationBrief, VacancyBrief, describe,
-                        silence_alerts, unsent)
+                        silence_alerts, unsent, worth_telling)
 from app.bot_actions import poll
 from app.collect import collect
 from app.dedup import Publication, find_reposts
@@ -105,9 +105,9 @@ async def announce_new(session) -> None:
             matched=tuple(content.matched), gaps=tuple(content.gaps),
         ))
 
+    sent_keys = await already_sent(session)
     fresh = [b for b in briefs
-             if b.state == "ok" and b.fit in {"strong", "possible"}
-             and f"vacancy:{b.id}" not in await already_sent(session)]
+             if worth_telling(b) and f"vacancy:{b.id}" not in sent_keys]
     if not fresh:
         return
 
