@@ -159,3 +159,22 @@ def test_confirmation_text_escapes_company_and_title():
     assert "{vacancy.company}" not in source
     assert "{vacancy.title" not in source
     assert source.count("esc(") >= 4
+
+
+def test_button_records_the_cv_track():
+    """Кнопка «Подав» мусить записувати версію резюме.
+
+    Вимір 09.10.2026: три подачі з дев'яти не мали версії — рівно ті, що
+    зроблені кнопкою. Воронка «за треком» існує саме для того, щоб
+    порівняти варіанти резюме між собою: без версії подача в неї не
+    потрапляє, і кнопка, задумана як спрощення, тихо псувала вимірювання.
+    """
+    import inspect
+
+    from app import bot_actions
+
+    source = inspect.getsource(bot_actions._apply)
+    assert "cv_version=" in source
+    # Трек береться з тієї самої підготовки подачі, що й для листа —
+    # щоб у журналі стояло рівно те, що оператор надіслав.
+    assert "prepare_draft" in source

@@ -29,7 +29,9 @@ from app.models import (Application, ApplicationEvent, BotState, Channel,
                         Notification, Status, Vacancy)
 from app.alerts import esc
 from app.config import get_settings
+from app.draft import prepare as prepare_draft
 from app.notify import NotConfigured, _safe, call
+from app.screening import screen
 
 log = logging.getLogger("jobtrack.bot")
 
@@ -64,11 +66,26 @@ async def _apply(session: AsyncSession, action: str, vacancy_id: int) -> str:
     if existing:
         return f"вже записано раніше: {esc(vacancy.company)}"
 
+    # Версію резюме записуємо САМІ, а не лишаємо порожньою.
+    #
+    # Вимір 09.10.2026: три подачі з дев'яти не мали версії — рівно ті, що
+    # зроблені кнопкою. А воронка «за треком» існує саме для того, щоб
+    # порівняти варіанти резюме між собою: без версії подача в неї не
+    # потрапляє, і кнопка, задумана як спрощення, тихо псувала вимірювання.
+    #
+    # Трек система вже визначила, коли вирішувала, чи вартий лист: беремо
+    # той самий, щоб у журналі стояло рівно те, що оператор і надіслав.
+    content = screen(vacancy.raw_text, vacancy.title)
+    draft = prepare_draft(title=vacancy.title, raw_text=vacancy.raw_text,
+                          matched=content.matched, gaps=content.gaps,
+                          replies=vacancy.replies, english=vacancy.english)
+
     app = Application(
         company=vacancy.company, position=vacancy.title, url=vacancy.url,
         channel=Channel(vacancy.source_key) if vacancy.source_key in
         Channel.__members__ else Channel.other,
         applied_on=date.today(), vacancy_id=vacancy_id,
+        cv_version=f"CV_{draft.track}",
     )
     session.add(app)
     await session.flush()
