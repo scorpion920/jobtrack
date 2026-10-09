@@ -290,3 +290,31 @@ def test_strong_junior_is_not_senior():
     for title in ("Strong Junior Python Engineer", "Junior Data Engineer",
                   "Middle Backend Developer", "Python Developer"):
         assert screen(stack, title).fit == "strong", title
+
+
+def test_seniority_named_only_in_the_body_is_caught():
+    """GT Protocol: у заголовку рівня немає, у тексті є.
+
+    «Full Stack Engineer (Python / React / Web3)» — і нижче «We are looking
+    for a Senior Full Stack Engineer». З семи вакансій, що називають рівень
+    у тексті, шість повторюють його в назві; ця одна — ні, і саме вона
+    проскочила в канал 09.10.2026.
+    """
+    text = ("We are looking for a Senior Full Stack Engineer who embraces "
+            "AI-assisted development. Python, React, PostgreSQL, Docker.")
+    m = screen(text, "Full Stack Engineer (Python / React / Web3)")
+    assert m.fit == "weak"
+    assert any("названо в тексті" in c for c in m.concerns)
+
+
+def test_ordinary_mention_of_seniors_is_not_a_stop():
+    """«Працюватимете поруч із senior-інженерами» — не вимога до рівня.
+
+    Саме такою фразою CrewRed описує команду, і вона не повинна відсіювати
+    junior-вакансію.
+    """
+    text = ("Work alongside experienced senior engineers who'll help you "
+            "level up. Python, FastAPI, PostgreSQL, React, Docker, ETL.")
+    m = screen(text, "Junior Python Full-Stack Developer")
+    assert not any("рівень вищий" in c for c in m.concerns)
+    assert m.fit == "strong"
