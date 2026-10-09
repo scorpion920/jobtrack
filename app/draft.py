@@ -42,6 +42,18 @@ TRACKS = {
     "backend": "Pedchenko_Serhii_CV_backend.pdf",
 }
 
+#  Рівень, названий словом, а не роками. «Strong Middle», «Middle+»,
+#  «Middle/Senior» — це вище за профіль, але НЕ блокер: на межі такі вакансії
+#  беруть сильного junior, і відсіювати їх означало б втрачати саме ті, де
+#  шанс існує.
+#
+#  Тому не стоп-сигнал, а попередження. Знайдено на Dedicatted 09.10.2026:
+#  «We're looking for a Strong Middle Data Scientist / AI Engineer», при
+#  цьому явної вимоги «X років» у тексті немає зовсім — скринер мовчав
+#  справедливо, і мовчання тут було гіршим за попередження.
+_LEVEL_WORD = re.compile(
+    r"\b(strong\s+middle|middle\s*\+|middle\s*/\s*senior|mid[\s-]?senior)\b", re.I)
+
 _CYRILLIC = re.compile(r"[а-щьюяєіїґ]", re.I)
 _LATIN = re.compile(r"[a-z]", re.I)
 
@@ -112,6 +124,11 @@ def prepare(*, title: str, raw_text: str, matched: list[str], gaps: list[str],
         notes.append(f"лише {replies} відгуків — подаватись сьогодні, не завтра")
     if english in {"c1", "c2"}:
         notes.append("вимога C1+ вища за профіль B2 — назвати прямо, не обходити")
+
+    level = _LEVEL_WORD.search(raw_text or "")
+    if level:
+        notes.append(f"у тексті «{level.group(0)}» — рівень вищий за профіль; "
+                     f"закрити це в перших двох реченнях листа")
 
     return Draft(track=track, cv_file=TRACKS[track], language=language,
                  strengths=list(matched), gaps=list(gaps), notes=notes)

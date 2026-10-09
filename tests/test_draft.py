@@ -78,3 +78,26 @@ def test_cv_file_matches_the_track():
     d = prepare(title="ML Engineer", raw_text="Шукаємо", matched=[], gaps=[])
     assert d.cv_file == TRACKS["data-ml"]
     assert d.cv_file.endswith(".pdf")
+
+
+def test_level_named_by_word_is_a_note_not_a_blocker():
+    """«Strong Middle» — вище за профіль, але не блокер.
+
+    На межі такі вакансії беруть сильного junior, і відсіювати їх означало б
+    втрачати саме ті, де шанс існує. Знайдено на Dedicatted 09.10.2026:
+    «We're looking for a Strong Middle Data Scientist / AI Engineer», при
+    цьому явної вимоги «X років» у тексті немає зовсім — скринер мовчав
+    справедливо, і мовчання тут було гіршим за попередження.
+    """
+    d = prepare(title="Data Scientist/AI Engineer",
+                raw_text="We're looking for a Strong Middle Data Scientist",
+                matched=["Python"], gaps=[])
+    assert any("Strong Middle" in n for n in d.notes)
+    assert any("перших двох реченнях" in n for n in d.notes)
+
+
+def test_plain_middle_is_not_flagged():
+    """Звичайний Middle — досяжний рівень, попереджати нема про що."""
+    d = prepare(title="Middle Python Developer",
+                raw_text="Шукаємо Middle розробника", matched=["Python"], gaps=[])
+    assert not any("рівень вищий" in n for n in d.notes)
