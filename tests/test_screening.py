@@ -318,3 +318,47 @@ def test_ordinary_mention_of_seniors_is_not_a_stop():
     m = screen(text, "Junior Python Full-Stack Developer")
     assert not any("рівень вищий" in c for c in m.concerns)
     assert m.fit == "strong"
+
+
+def test_typo_in_the_vacancy_does_not_hide_the_requirement():
+    """Bookimed пише «4+ years of commertial experience» — з опечаткою.
+
+    Правило з явним переліком слів («professional|commercial») її не
+    впізнало, і вакансія з десятьма змістовними збігами дійшла до
+    рекомендації на подачу, хоча вимагає вчетверо більше досвіду, ніж є.
+
+    Текст вакансії пише людина, і вимагати від неї правопису не можна:
+    між числом і словом «experience» дозволено будь-які одне-два слова.
+    """
+    m = screen("4+ years of commertial experience, 2+ with LLMs",
+               "Python AI Developer")
+    assert any("3+ років" in c for c in m.concerns), m.concerns
+
+
+def test_requirement_with_several_words_between_is_caught():
+    """MasterDynamix: «5+ years of professional full-stack development
+    experience» — між числом і словом «experience» три слова.
+
+    З межею у два слова вакансія виглядала сильним збігом, маючи вимогу
+    вп'ятеро вищу за профіль.
+    """
+    m = screen("Required 5+ years of professional full-stack development experience",
+               "Full-Stack Engineer")
+    assert any("3+ років" in c for c in m.concerns), m.concerns
+
+
+def test_experience_without_a_number_is_not_a_requirement():
+    """«Практичний досвід скрапінгу» — не поріг років, а опис навички."""
+    text = "Практичний досвід скрапінгу: requests/httpx, парсинг через BeautifulSoup"
+    assert not any("3+ років" in c for c in screen(text, "Python Developer").concerns)
+
+
+def test_experience_rule_stays_linear():
+    """Відкритий квантифікатор між словами повернув би ReDoS, через який це
+    правило вже переписувалось. Межа на повтореннях тримає час лінійним."""
+    import time
+
+    hostile = "4" + " " * 20000 + "years" + " " * 20000 + "experience"
+    start = time.perf_counter()
+    screen(hostile, "Developer")
+    assert time.perf_counter() - start < 1.0
