@@ -173,13 +173,24 @@ async def remind_silence() -> None:
 
 def build(today: date | None = None) -> AsyncIOScheduler:
     scheduler = AsyncIOScheduler(timezone="Europe/Kyiv")
+    # `misfire_grace_time` великий НАВМИСНО.
+    #
+    # Система живе на ноутбуці, який спить. Прострочений запуск APScheduler
+    # за замовчуванням пропускає — і з грацією в 10 хвилин це означало, що
+    # після пробудження збір не відбувався зовсім, а чекав наступної години.
+    # Виміряно 09.10.2026: машина спала з 07:35 до 10:40, і за три години
+    # не було жодного прогону. Виглядало це як «нових вакансій немає».
+    #
+    # Разом із `coalesce=True` велика грація дає потрібну поведінку: після
+    # пробудження виконується ОДИН прогін одразу, а не черга пропущених і
+    # не тиша.
     scheduler.add_job(collect_all, "interval", hours=1, id="collect",
-                      coalesce=True, max_instances=1, misfire_grace_time=600)
+                      coalesce=True, max_instances=1, misfire_grace_time=6 * 3600)
     # Пів хвилини, а не дві: дія має відчуватись миттєвою. Запит дешевий —
     # getUpdates без очікування повертається одразу, і коли натискань немає,
     # це порожня відповідь.
     scheduler.add_job(poll_actions, "interval", seconds=30, id="actions",
-                      coalesce=True, max_instances=1, misfire_grace_time=60)
+                      coalesce=True, max_instances=1, misfire_grace_time=300)
     scheduler.add_job(remind_silence, "cron", hour=9, minute=30, id="silence",
                       coalesce=True, max_instances=1, misfire_grace_time=3600)
     return scheduler

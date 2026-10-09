@@ -21,8 +21,12 @@
     <button type="submit">Зібрати {{ s.label or s.key }}</button>
   </form>
   {% endfor %}
+  {% if stale_hours is not none and stale_hours >= 2 %}
+    <span class="sub" style="color:#b45309"><strong>збору не було {{ stale_hours }} год</strong>
+    — машина спала або планувальник зупинився; це НЕ означає, що нового немає</span><br>
+  {% endif %}
   {% if last_run %}<span class="sub">останній збір: {{ last_run }}{% if next_run %} ·
-    наступний автоматично о {{ next_run }}{% else %} · <strong style="color:#b45309">автозбір
+    наступний автоматично о {{ next_run }} (київський час){% else %} · <strong style="color:#b45309">автозбір
     вимкнено</strong>{% endif %}</span>{% endif %}
 </div>
 

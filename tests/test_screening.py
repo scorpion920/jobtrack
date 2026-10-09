@@ -233,3 +233,60 @@ def test_threshold_rule_still_works_after_bounding():
                for c in screen("5+ years of experience", "Python Developer").concerns)
     assert not any("3+ років" in c
                    for c in screen("1 рік досвіду", "Python Developer").concerns)
+
+
+def test_rules_work_through_non_breaking_spaces():
+    """Правило перестало ловити на СПРАВЖНІХ текстах, лишаючись зеленим.
+
+    Знайдено вранці 09.10.2026 по шуму в каналі: у канал пішли сімнадцять
+    вакансій, серед них DOIT Software з вимогою «3–5 years of professional
+    experience», яку скринер відсіював напередодні.
+
+    Причина — ланцюг із двох кроків, кожен сам по собі правильний:
+      1. HTML рясніє `&nbsp;`, і після зняття розмітки вони лишаються
+         як U+00A0 — у DOIT це `of\\xa0professional`;
+      2. виправляючи ReDoS, довелося замінити `\\s*` на явний `[ \\t]{0,3}`,
+         а цей клас нерозривного пробілу не ловить.
+
+    Тест на звичайних пробілах лишався зеленим — саме тому він і не
+    спіймав: перевіряв те, чого в реальних даних не буває.
+    """
+    nbsp = "3–5 years of professional experience in data science"
+    concerns = screen(nbsp, "Data Scientist").concerns
+    assert any("3+ років" in c for c in concerns), concerns
+
+    # Інші невидимі пробіли з тієї ж родини.
+    for space in (" ", " "):
+        text = f"5+ years of{space}experience with Python"
+        assert any("3+ років" in c for c in screen(text, "Developer").concerns), space
+
+
+def test_zero_width_characters_do_not_hide_keywords():
+    """Символи нульової ширини розривають слово, не змінюючи вигляду."""
+    from app.screening import normalize_spaces
+
+    assert normalize_spaces("Py​thon") == "Python"
+    assert normalize_spaces(None) == ""
+
+
+def test_seniority_in_title_blocks_the_vacancy():
+    """Один рік комерційного досвіду не робить Senior-вакансію доступною,
+    хай як збігається стек.
+
+    Усі шість із нічного шуму мали рівень у НАЗВІ: Ciklum «Expert», PLANEKS
+    і Django Stars «Senior», Group107, YozmaTech, Xenoss. DOU не повідомляє
+    років, а в тексті вимога трапляється не завжди — назва ж каже рівень
+    прямо, так само як вона каже професію.
+    """
+    stack = "Python, FastAPI, PostgreSQL, Docker, ETL, Celery"
+    for title in ("Expert Full Stack Engineer", "Senior Applied AI Engineer",
+                  "Staff Engineer", "Principal Developer", "Head of Data"):
+        assert screen(stack, title).fit == "weak", title
+
+
+def test_strong_junior_is_not_senior():
+    """«Strong Junior» містить слово Strong, а не Senior."""
+    stack = "Python, FastAPI, PostgreSQL, Docker, ETL, Celery"
+    for title in ("Strong Junior Python Engineer", "Junior Data Engineer",
+                  "Middle Backend Developer", "Python Developer"):
+        assert screen(stack, title).fit == "strong", title

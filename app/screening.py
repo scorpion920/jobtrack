@@ -162,6 +162,18 @@ TITLE_STOP_PATTERNS: tuple[tuple[str, str], ...] = (
      "менеджмент, а не розробка"),
     (r"designer|дизайнер|motion|ux|ui\b", "дизайн"),
     (r"recruiter|sourcer|рекрутер|talent", "рекрутинг"),
+
+    # Рівень позиції в назві. Один рік комерційного досвіду не робить
+    # Senior-вакансію доступною, хай як збігається стек.
+    #
+    # Знайдено вранці 09.10.2026 по шуму в каналі: Ciklum «Expert Full Stack
+    # Engineer», PLANEKS і Django Stars «Senior…» пройшли як сильний збіг,
+    # бо DOU не повідомляє років, а в тексті вимога трапляється не завжди.
+    # Назва ж каже рівень прямо — так само, як вона каже професію.
+    #
+    # «Strong Junior» сюди не підпадає: слово Senior у ньому відсутнє.
+    (r"\b(senior|sr\.?|expert|principal|staff|architect|head of)\b",
+     "рівень вищий за профіль (1 рік досвіду)"),
     (r"sales|media buyer|маркетолог|smm|affiliate", "продажі/маркетинг"),
 )
 
@@ -221,6 +233,30 @@ class Match:
         return "possible" if len(self.matched) >= 2 else "weak"
 
 
+#  Пробіли, які виглядають як звичайні, але такими не є.
+#
+#  HTML рясніє `&nbsp;`, і після зняття розмітки вони лишаються як U+00A0.
+#  Регулярки з явним класом `[ \t]` їх не ловлять — а саме такий клас
+#  довелося поставити, виправляючи ReDoS. Наслідок виявився вранці
+#  09.10.2026: правило про поріг досвіду перестало спрацьовувати на
+#  СПРАВЖНІХ текстах, хоча тест на звичайних пробілах лишався зеленим,
+#  і в канал пішли сімнадцять Senior-вакансій.
+#
+#  Лікуємо в корені: невидимі пробіли зводяться до звичайного НА ВХОДІ, і
+#  жодне правило більше не мусить про них думати.
+_ODD_SPACES = str.maketrans({
+    "\xa0": " ",      # нерозривний (&nbsp;)
+    "\u2007": " ",    # цифровий нерозривний
+    "\u202f": " ",    # вузький нерозривний
+    "\u200b": "",     # нульової ширини
+    "\u2060": "",     # з'єднувач слів
+})
+
+
+def normalize_spaces(text: str) -> str:
+    return (text or "").translate(_ODD_SPACES)
+
+
 def screen(text: str, title: str | None = None) -> Match:
     """Оцінити вакансію за її текстом і назвою посади.
 
@@ -228,11 +264,11 @@ def screen(text: str, title: str | None = None) -> Match:
     назві. Професія названа в заголовку, а в тексті лежать інструменти —
     і вони в розробника й у DevOps-інженера значною мірою ті самі.
     """
-    low = (text or "").lower()
+    low = normalize_spaces(text).lower()
     result = Match()
 
     for pattern, why in TITLE_STOP_PATTERNS:
-        if re.search(pattern, (title or "").lower(), re.I):
+        if re.search(pattern, normalize_spaces(title).lower(), re.I):
             result.concerns.append(why)
 
     for name, variants in HAVE.items():

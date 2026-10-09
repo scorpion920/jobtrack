@@ -12,7 +12,8 @@ from pathlib import Path
 from types import SimpleNamespace
 from urllib.parse import quote
 
-from datetime import date
+from datetime import date, datetime, timezone
+from zoneinfo import ZoneInfo
 
 from fastapi import Depends, FastAPI, Form, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
@@ -306,6 +307,14 @@ async def vacancies(request: Request, message: str | None = None,
                                  _STATE[v.state]))
 
     last = max((s.last_run_at for s in sources if s.last_run_at), default=None)
+    # Час показуємо в поясі оператора, а не в UTC.
+    #
+    # Сторінка показувала «07:33» для збору, який відбувся о 10:33 за Києвом,
+    # і це ввело в оману навіть автора: три години різниці виглядали як
+    # зупинка планувальника. Числа без пояса — те саме, що числа без
+    # одиниць виміру.
+    KYIV = ZoneInfo("Europe/Kyiv")
+    last_local = last.astimezone(KYIV) if last else None
     # Коли буде наступний автоматичний збір. Без цього рядка сторінка не
     # відрізняє «планувальник працює і чекає» від «планувальник не стартував».
     job = getattr(request.app.state, "scheduler", None)
@@ -317,8 +326,13 @@ async def vacancies(request: Request, message: str | None = None,
 
     return templates.TemplateResponse(request, "vacancies.html", {
         "rows": view, "sources": sources, "message": message, "sort": sort,
-        "last_run": last.strftime("%d.%m %H:%M") if last else None,
+        "last_run": last_local.strftime("%d.%m %H:%M") if last_local else None,
         "next_run": next_run,
+        # Скільки годин тому був збір. Потрібне, щоб «система спала» не
+        # виглядало як «нових вакансій немає»: 09.10.2026 ноутбук спав три
+        # години, і перелік був порожній з цілком правдоподібним виглядом.
+        "stale_hours": (int((datetime.now(timezone.utc) - last).total_seconds() // 3600)
+                        if last else None),
     })
 
 
